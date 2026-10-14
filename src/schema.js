@@ -83,7 +83,10 @@ export const SCHEMA = [
 let ready = null;
 export function ensureSchema(env) {
   if (!ready) {
-    ready = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s))).catch((e) => {
+    ready = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)))
+      // columns added after the first release; the error when the column already exists is expected
+      .then(() => env.DB.prepare(`ALTER TABLE users ADD COLUMN favorite_team TEXT`).run().catch(() => {}))
+      .catch((e) => {
       ready = null;
       throw e;
     });

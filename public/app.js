@@ -65,6 +65,27 @@ async function loadDrivers() {
   state.driverMap = Object.fromEntries(drivers.map((d) => [d.driver_id, d]));
   return drivers;
 }
+async function loadTeams() {
+  try { state.teams = (await api('/teams')).teams; } catch { state.teams = []; }
+  return state.teams;
+}
+const teamBySlug = (slug) => (state.teams || []).find((t) => t.slug === slug);
+const plain = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const teamSelect = (current) => `<select name="team" id="team-sel"><option value="">No favorite team</option>${(state.teams || []).map((t) => `<option value="${esc(t.slug)}" ${t.slug === current ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`;
+// Side panel: team logo, its drivers, the car and some race photos (formula1.com images).
+function teamSide() {
+  const t = state.me && teamBySlug(state.me.favorite_team);
+  if (!t) return '';
+  const drivers = t.drivers.map((ln) => (state.drivers || []).find((d) => plain(d.name).includes(ln))).filter(Boolean);
+  const img = (src, cls, alt) => `<img class="${cls}" src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`;
+  return `<aside class="teamside" style="--team:${esc(t.color)}">
+    <a class="tlogo" href="${esc(t.url)}" target="_blank" rel="noopener">${img(t.logo, 'tl', t.name)}<span>${esc(t.name)}</span></a>
+    <div class="tdrivers">${drivers.map((d) => `<div class="tdrv">${avatar(d, 56)}<b>${esc(d.name)}</b><span class="muted small">${d.number ? '#' + esc(d.number) : ''}</span></div>`).join('')}</div>
+    ${img(t.car, 'tcar', t.name + ' car')}
+    <div class="tphotos">${t.photos.map((p) => img(p, 'tph', t.name + ' on track')).join('')}</div>
+    <p class="muted small">Your favorite team · <a href="/account" data-link>change</a></p>
+  </aside>`;
+}
 async function loadRaces() {
   const { races, server_time } = await api('/races');
   state.races = races;
@@ -77,7 +98,7 @@ const trackImg = (r, cls = 'track') =>
 // ----------------------------------------------------------------- shell
 function shell(inner) {
   const u = state.me;
-  return `<div class="wrap">
+  return `<div class="wrap ${state.me && teamBySlug(state.me.favorite_team) ? 'withside' : ''}">
     <header class="topbar">
       <a class="brand" href="/" data-link><img class="f1logo" src="/f1-logo.png" alt="F1" onerror="this.outerHTML='<span class=&quot;logo&quot;>F1</span>'"> ${esc(state.appName)}</a>
       <span class="spacer"></span>
@@ -86,7 +107,7 @@ function shell(inner) {
         <a class="muted small" href="/account" data-link title="Change password">${esc(u.name)}</a>
         <button class="ghost small" data-act="logout">Log out</button>` : ''}
     </header>
-    ${inner}
+    ${teamSide() ? `<div class="layout"><main>${inner}</main>${teamSide()}</div>` : inner}
   </div>`;
 }
 
@@ -114,6 +135,8 @@ async function render() {
       state.loaded = true;
       document.title = state.appName;
     }
+    if (!state.teams) await loadTeams();
+    if (state.me && state.me.favorite_team && !state.drivers) { try { await loadDrivers(); } catch { /* ignore */ } }
     let m;
     if ((m = path.match(/^\/join\/([a-z0-9]+)$/))) return await joinView(m[1]);
     if (!state.me) return authView();
@@ -137,6 +160,7 @@ function authForm(afterAuth) {
     <button data-act="authmode" data-mode="register" class="${authMode === 'register' ? 'on' : ''}">Create account</button></div>
     <form data-form="auth">
       ${authMode === 'register' ? `<label for="a-name">Your name (shown to league members)</label><input id="a-name" name="name" required maxlength="40" autocomplete="name">` : ''}
+      ${authMode === 'register' ? `<label for="team-sel">Favorite team (optional)</label>${teamSelect('')}` : ''}
       <label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email">
       <label for="a-pass">Password ${authMode === 'register' ? '(min. 8 characters)' : ''}</label>
       <input id="a-pass" name="password" type="password" required minlength="${authMode === 'register' ? 8 : 1}" autocomplete="${authMode === 'register' ? 'new-password' : 'current-password'}">
@@ -151,7 +175,10 @@ function authView() {
 // ---------------------------------------------------------------- account
 function accountView() {
   const forced = !!state.me.must_change;
-  app.innerHTML = shell(`<div class="auth"><div class="panel">
+  app.innerHTML = shell(`<div class="auth">${forced ? '' : `<div class="panel"><h2>Favorite team</h2>
+    <p class="muted small">Your team is shown at the side of every page with its drivers, car and race photos.</p>
+    <form data-form="team"><label for="team-sel">Team</label>${teamSelect(state.me.favorite_team)}
+      <p><button class="primary">Save team</button></p></form></div>`}<div class="panel">
     <h2>${forced ? 'Choose a new password' : 'Change password'}</h2>
     ${forced ? '<p class="banner">Your password was reset by the league creator. Choose your own password to continue.</p>' : ''}
     <form data-form="password">
@@ -550,6 +577,14 @@ const forms = {
     try {
       await api('/account/password', { method: 'POST', body: Object.fromEntries(new FormData(f)) });
       state.me.must_change = 0; toast('Password changed'); go('/');
+    } catch (e) { fail(e); }
+  },
+  async team(f) {
+    try {
+      const r = await api('/account/team', { method: 'POST', body: Object.fromEntries(new FormData(f)) });
+      state.me.favorite_team = r.favorite_team;
+      if (r.favorite_team && !state.drivers) await loadDrivers();
+      toast(r.favorite_team ? 'Favorite team saved' : 'Favorite team cleared'); render();
     } catch (e) { fail(e); }
   },
   async newleague(f) {

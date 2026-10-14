@@ -3,6 +3,7 @@ import {
   HttpError, json, readBody, hashPassword, safeEqual, randomToken, randomCode, sha256Hex, parseCookies, esc,
 } from './util.js';
 import { sendMail, emailTemplate } from './mail.js';
+import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
@@ -43,7 +44,7 @@ async function currentUser(request, env) {
   if (!sid) return null;
   return one(
     env.DB.prepare(
-      `SELECT u.id, u.name, u.email, u.must_change FROM sessions s JOIN users u ON u.id = s.user_id
+      `SELECT u.id, u.name, u.email, u.must_change, u.favorite_team FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`
     ).bind(await sha256Hex(sid), now())
   );
@@ -125,13 +126,14 @@ async function handleApi(request, env, ctx, url) {
     const password = String(b.password || '');
     if (!validEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
+    const team = TEAM_SLUGS.has(String(b.team || '')) ? String(b.team) : null;
     if (await one(env.DB.prepare(`SELECT id FROM users WHERE email=?`).bind(email)))
       throw new HttpError(409, 'An account with this email already exists.');
     const { hash, salt } = await hashPassword(password, undefined, env.PBKDF2_ITERATIONS);
-    const r = await env.DB.prepare(`INSERT INTO users (email, name, pass_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .bind(email, name, hash, salt, now()).run();
+    const r = await env.DB.prepare(`INSERT INTO users (email, name, pass_hash, salt, created_at, favorite_team) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(email, name, hash, salt, now(), team).run();
     const id = r.meta.last_row_id;
-    return json({ user: { id, name, email } }, 200, { 'set-cookie': await startSession(env, request, id) });
+    return json({ user: { id, name, email, favorite_team: team } }, 200, { 'set-cookie': await startSession(env, request, id) });
   }
 
   if (method === 'POST' && path === '/api/login') {
@@ -140,7 +142,7 @@ async function handleApi(request, env, ctx, url) {
     const u = await one(env.DB.prepare(`SELECT * FROM users WHERE email=?`).bind(email));
     const attempt = await hashPassword(String(b.password || ''), u?.salt, env.PBKDF2_ITERATIONS);
     if (!u || !safeEqual(attempt.hash, u.pass_hash)) throw new HttpError(401, 'Wrong email or password.');
-    return json({ user: { id: u.id, name: u.name, email: u.email, must_change: u.must_change } }, 200, {
+    return json({ user: { id: u.id, name: u.name, email: u.email, must_change: u.must_change, favorite_team: u.favorite_team || null } }, 200, {
       'set-cookie': await startSession(env, request, u.id),
     });
   }
@@ -150,6 +152,8 @@ async function handleApi(request, env, ctx, url) {
     if (sid) await env.DB.prepare(`DELETE FROM sessions WHERE token_hash=?`).bind(await sha256Hex(sid)).run();
     return json({ ok: true }, 200, { 'set-cookie': 'sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' });
   }
+
+  if (method === 'GET' && path === '/api/teams') return json({ teams: teamsForClient() });
 
   if (method === 'GET' && path === '/api/me') {
     const user = await currentUser(request, env);
@@ -333,6 +337,15 @@ async function handleApi(request, env, ctx, url) {
     ]);
     await notify(env, target, `Your password was reset by ${user.name}.`, '/');
     return json({ temp_password: temp });
+  }
+
+  // ---- favorite team ('' clears it)
+  if (method === 'POST' && path === '/api/account/team') {
+    const b = await readBody(request);
+    const team = String(b.team || '');
+    if (team && !TEAM_SLUGS.has(team)) throw new HttpError(400, 'Unknown team.');
+    await env.DB.prepare(`UPDATE users SET favorite_team=? WHERE id=?`).bind(team || null, user.id).run();
+    return json({ ok: true, favorite_team: team || null });
   }
 
   // ---- change own password (also used after a reset, when the current one is not needed)
