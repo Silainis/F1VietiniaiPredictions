@@ -79,7 +79,7 @@ function shell(inner) {
   const u = state.me;
   return `<div class="wrap">
     <header class="topbar">
-      <a class="brand" href="/" data-link><span class="logo">F1</span> ${esc(state.appName)}</a>
+      <a class="brand" href="/" data-link><img class="f1logo" src="https://logos-world.net/wp-content/uploads/2023/12/F1-Logo.png" alt="F1" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=&quot;logo&quot;>F1</span>'"> ${esc(state.appName)}</a>
       <span class="spacer"></span>
       ${u ? `<div class="bell"><button data-act="bell" aria-label="Notifications">🔔<span id="badge"></span></button>
         <div id="notes" class="notes" hidden></div></div>

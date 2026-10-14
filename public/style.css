@@ -33,6 +33,7 @@ h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; } h3 { font-size: 1rem; }
 .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px 64px; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 14px 0; position: relative; }
 .brand { font-weight: 800; letter-spacing: .02em; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.brand .f1logo { height: 26px; width: auto; display: block; }
 .brand .logo { background: var(--red); border-radius: 8px; padding: 2px 8px; font-style: italic; }
 .spacer { flex: 1; }
 .bell { position: relative; }
