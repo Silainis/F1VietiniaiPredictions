@@ -481,7 +481,6 @@ async function getRacePredictions(env, lid, round, user) {
 
 async function savePrediction(env, ctx, url, lid, round, user, b) {
   const race = await getRaceOrThrow(env, round);
-  if (await resultLookup(env, round)) throw new HttpError(400, 'This race is finished.');
 
   const picks = {};
   for (const k of PICK_KEYS) picks[k] = String(b[k] || '');

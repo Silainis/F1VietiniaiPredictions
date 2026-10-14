@@ -368,7 +368,7 @@ async function raceView(lid, round) {
   const { race, mine, others, missing, results } = data;
   const finished = !!results;
   // Editable before the race starts; after the start only if nothing valid exists yet (late request).
-  const isEditable = !finished && (!data.locked || !mine || mine.status === 'late_rejected');
+  const isEditable = !data.locked || !mine || mine.status === 'late_rejected';
   raceCtx = { lid, round, race, locked: data.locked, finished, editable: isEditable };
   sel = { p1: null, p2: null, p3: null, p4: null, p5: null, p10: null, dnfs: Array(DNF_SLOTS).fill(null) };
   if (mine) {
@@ -377,7 +377,8 @@ async function raceView(lid, round) {
   }
 
   let banner = '';
-  if (finished) banner = `<div class="banner green">This race is finished. Points are in.</div>`;
+  if (finished && isEditable) banner = `<div class="banner red">This race is already finished, so voting is closed. You can still fill in a prediction and send it: the league admins will be asked to review it and decide whether an exception can be made.</div>`;
+  else if (finished) banner = `<div class="banner green">This race is finished. Points are in.</div>`;
   else if (!data.locked) banner = `<div class="banner">Predictions close at the race start: <b>${fmtDate(race.race_ts)}</b> · <span id="cd">…</span></div>`;
   else if (mine && mine.status === 'late_pending') banner = `<div class="banner">⏳ Your late prediction is waiting for approval from a league admin.</div>`;
   else if (mine && mine.status === 'late_rejected') banner = `<div class="banner red">Your late prediction was not accepted. You can send a new one for approval.</div>`;
@@ -427,7 +428,7 @@ function openPicker(slot) {
   modal.className = 'modal';
   modal.innerHTML = `<div class="sheet"><div class="row between"><h2>${title}</h2><button data-act="close-modal">Close</button></div>
     <div class="pick-grid" style="margin-top:12px">
-    ${state.drivers.map((d) => `<button class="slot pick" data-act="choose" data-slot="${slot}" data-id="${esc(d.driver_id)}" ${used.has(d.driver_id) && d.driver_id !== current ? 'disabled' : ''}>
+    ${state.drivers.map((d) => `<button class="slot pick" data-act="choose" data-slot="${slot}" data-id="${esc(d.driver_id)}" style="${used.has(d.driver_id) && d.driver_id !== current ? 'opacity:.4' : ''}" title="${used.has(d.driver_id) && d.driver_id !== current ? 'Already picked: choosing again moves them here' : ''}">
       ${avatar(d, 64)}<b>${esc(d.name)}</b><small>${esc(d.team || '')}${d.number ? ' · #' + esc(d.number) : ''}</small></button>`).join('')}
     </div>${current ? `<p><button class="ghost danger" data-act="choose" data-slot="${slot}" data-id="">Clear this pick</button></p>` : ''}</div>`;
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
@@ -506,6 +507,10 @@ const actions = {
   'close-modal'() { document.querySelector('.modal')?.remove(); },
   choose(el) {
     const slot = el.dataset.slot, id = el.dataset.id || null;
+    if (id) { // a driver can only be used once: take them out of their previous place
+      for (const k of SLOTS) if (sel[k] === id) sel[k] = null;
+      sel.dnfs = sel.dnfs.map((d) => (d === id ? null : d));
+    }
     if (slot.startsWith('dnf')) sel.dnfs[Number(slot.slice(3))] = id; else sel[slot] = id;
     document.querySelector('.modal')?.remove();
     paintSlots();
@@ -513,10 +518,11 @@ const actions = {
   async save(el) {
     const body = { ...Object.fromEntries(SLOTS.map((k) => [k, sel[k]])), dnfs: sel.dnfs.filter(Boolean) };
     if (SLOTS.some((k) => !body[k])) return toast('Pick a driver for P1–P5 and P10 first.', true);
+    if (raceCtx.locked && !confirm('This race has already started, so voting is closed. Your prediction will be sent to the league admins, who will review it and decide whether an exception can be made. Send it?')) return;
     el.disabled = true;
     try {
       const r = await api(`/leagues/${raceCtx.lid}/predictions/${raceCtx.round}`, { method: 'PUT', body });
-      toast(r.status === 'late_pending' ? 'Sent to the league admin for approval' : 'Prediction saved');
+      toast(r.status === 'late_pending' ? 'Too late for normal voting. Sent to the league admins for approval' : 'Prediction saved');
       render();
     } catch (e) { fail(e); el.disabled = false; }
   },
