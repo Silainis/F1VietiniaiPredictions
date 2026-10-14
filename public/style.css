@@ -91,11 +91,15 @@ form .row input { flex: 1; min-width: 160px; width: auto; }
 /* Circuit maps come from formula1.com in colour; this shows them in black and white on a white tile. */
 .track { width: 84px; height: 54px; object-fit: contain; background: #fff; border-radius: 8px; padding: 4px; filter: grayscale(1) contrast(2); }
 .track.big { width: 200px; height: 112px; padding: 6px; }
+.trackbox { position: relative; display: inline-block; flex: none; line-height: 0; }
+.trackbox .flag { position: absolute; top: 4px; right: 4px; width: 22px; height: auto; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .4); }
+.trackbox.big .flag { top: 6px; right: 6px; width: 32px; }
 .track-ph { width: 84px; height: 54px; border-radius: 8px; background: var(--panel-2); display: grid; place-items: center; color: var(--muted); filter: grayscale(1); }
 @media (max-width: 640px) {
   .race { grid-template-columns: 30px 64px 1fr; }
   .race .side { grid-column: 2 / 4; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .track, .track-ph { width: 64px; height: 44px; }
+  .trackbox .flag { width: 18px; }
 }
 
 /* drivers */

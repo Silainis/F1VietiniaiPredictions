@@ -92,8 +92,18 @@ async function loadRaces() {
   state.offset = server_time - Date.now();
   return races;
 }
-const trackImg = (r, cls = 'track') =>
-  r.circuit_image ? `<img class="${cls}" src="${esc(r.circuit_image)}" alt="${esc(r.circuit_name)} layout" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<div class="track-ph">🏁</div>`;
+const FLAGS = { australia: 'au', china: 'cn', japan: 'jp', usa: 'us', 'united states': 'us', canada: 'ca', monaco: 'mc', spain: 'es', austria: 'at',
+  uk: 'gb', 'united kingdom': 'gb', 'great britain': 'gb', belgium: 'be', hungary: 'hu', netherlands: 'nl', italy: 'it', azerbaijan: 'az', bahrain: 'bh',
+  singapore: 'sg', mexico: 'mx', brazil: 'br', uae: 'ae', 'united arab emirates': 'ae', qatar: 'qa', 'saudi arabia': 'sa', malaysia: 'my', portugal: 'pt',
+  france: 'fr', germany: 'de', turkey: 'tr', 'south korea': 'kr', korea: 'kr', russia: 'ru', india: 'in', argentina: 'ar', 'south africa': 'za', morocco: 'ma', vietnam: 'vn' };
+const flagImg = (country) => {
+  const c = FLAGS[String(country || '').toLowerCase()];
+  return c ? `<img class="flag" src="https://flagcdn.com/w40/${c}.png" srcset="https://flagcdn.com/w80/${c}.png 2x" alt="${esc(country)}" title="${esc(country)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+};
+const trackImg = (r, cls = 'track') => {
+  const pic = r.circuit_image ? `<img class="${cls}" src="${esc(r.circuit_image)}" alt="${esc(r.circuit_name)} layout" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<div class="track-ph">🏁</div>`;
+  return `<span class="trackbox ${cls.includes('big') ? 'big' : ''}">${pic}${flagImg(r.country)}</span>`;
+};
 
 // ----------------------------------------------------------------- shell
 function shell(inner) {
