@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Must match the name of your existing Worker so this project updates it.
+  "name": "f1-vietiniai-predictions",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+
+  // Static front-end (public/) is served by Cloudflare directly.
+  // Only /api/* requests run the Worker code.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Database. Replace the id after running: npx wrangler d1 create f1-predictions
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "f1-predictions",
+      "database_id": "PASTE-YOUR-DATABASE-ID-HERE"
+    }
+  ],
+
+  // Keeps the calendar, results and photos up to date automatically.
+  "triggers": { "crons": ["*/30 * * * *"] },
+
+  "vars": {
+    "SEASON": "2026",
+    "APP_NAME": "F1 Vietiniai Predictions",
+    // Sender address for emails, e.g. "F1 Predictions <noreply@yourdomain.com>".
+    // Leave empty to disable emails (invite links still work).
+    "MAIL_FROM": ""
+  }
+}
