@@ -48,6 +48,11 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   Pages: /wpc (hall of fame, all-time, seasons + chart), /player/:id and /player/h/:name (trophies gold/silver/bronze
   per WPC year, highlights: best race, 3+ streaks, scoring streak, races led, droughts; season table; current pick accuracy).
 
+- Charts: x-axis uses 3-letter race codes (raceCode in app.js), legend shows player avatars. Form (formOf): last 3 races vs own
+  average; fire 🔥 if recent avg >= max(2, 1.5x avg), ice 🧊 if 0 or <= 0.4x avg (needs 4+ races). Shown on avatars and line ends.
+- Race page after start: Prediction board (players as columns, slots as rows, green = right, "Most picked" column),
+  Head to head (pick two players), missing players shown as DNS with a joke excuse (DNS_EXCUSES, fixed per player+race).
+
 ## Working notes
 - Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
 - Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, Wikipedia photos.

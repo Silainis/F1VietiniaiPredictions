@@ -412,34 +412,36 @@ async function scoreboardTab(id) {
   const color = (i) => COLORS[i % COLORS.length];
   const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th><th class="r">Last race</th></tr></thead><tbody>
     ${board.map((b, i) => { const last = b.per_race[b.per_race.length - 1]; return `<tr class="${i === 0 ? 'lead' : ''}">
-      <td class="num">${i + 1}</td><td><span class="who-row"><span class="dot" style="background:${color(i)}"></span><a class="who-row plain" href="/player/${b.id}" data-link>${userAvatar(b, 30)}<span>${esc(b.name)}</span></a></span></td>
+      <td class="num">${i + 1}</td><td><span class="who-row"><span class="dot" style="background:${color(i)}"></span><a class="who-row plain" href="/player/${b.id}" data-link>${formAvatar(b, 30, formOf(b.per_race))}<span>${esc(b.name)}</span></a></span></td>
       <td class="r num"><b>${b.total}</b></td><td class="r num ${last.pts ? 'up' : 'same'}">${last.pts ? '+' + last.pts : '='}</td></tr>`; }).join('')}
     </tbody></table></div></div>`;
   return standings + trendChart(races, board, color) + remarks(races, board, color) + perRaceTable(races, board);
 }
 
 function trendChart(races, board, color) {
-  const W = 760, H = 320, L = 40, R = 16, T = 16, B = 34;
+  const W = 760, H = 320, L = 40, R = 30, T = 16, B = 34;
   const max = Math.max(1, ...board.map((b) => b.total));
   const yMax = Math.ceil(max / 2) * 2 || 2;
   const x = (i) => L + (races.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (races.length - 1));
   const y = (v) => T + (H - T - B) * (1 - v / yMax);
   const grid = Array.from({ length: 5 }, (_, i) => Math.round((yMax * i) / 4));
+  const forms = board.map((b) => (b.form === undefined ? formOf(b.per_race) : b.form));
   const lines = board.map((b, bi) => {
     const pts = [{ i: -1, v: 0 }, ...b.per_race.map((p, i) => ({ i, v: p.total }))];
     const px = (i) => (i < 0 ? L - 0 : x(i));
     const d = pts.map((p, k) => `${k ? 'L' : 'M'}${px(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
     return `<path d="${d}" fill="none" stroke="${color(bi)}" stroke-width="2.5" stroke-linejoin="round"/>` +
-      b.per_race.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="3.5" fill="${color(bi)}"><title>${esc(b.name)} · ${esc(shortGp(races[i].name))}: ${p.total} pts (${p.pts ? '+' + p.pts : 'no change'})</title></circle>`).join('');
+      b.per_race.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="3.5" fill="${color(bi)}"><title>${esc(b.name)} · ${esc(shortGp(races[i].name))}: ${p.total} pts (${p.pts ? '+' + p.pts : 'no change'})</title></circle>`).join('') +
+      (forms[bi] && b.per_race.length ? `<text x="${(x(b.per_race.length - 1) + 7).toFixed(1)}" y="${(y(b.per_race[b.per_race.length - 1].total) + 5).toFixed(1)}" class="form-emoji">${forms[bi].kind === 'fire' ? '🔥' : '🧊'}</text>` : '');
   }).join('');
-  const every = Math.ceil(races.length / 12);
+  const every = Math.ceil(races.length / 26);
   return `<div class="panel chart"><h3>Points over the season</h3>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative points per player after each race">
       ${grid.map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="#2a2e37"/><text x="${L - 8}" y="${y(g) + 4}" text-anchor="end">${g}</text>`).join('')}
-      ${races.map((r, i) => (i % every === 0 ? `<text x="${x(i)}" y="${H - 12}" text-anchor="middle">R${r.round}</text>` : '')).join('')}
+      ${races.map((r, i) => (i % every === 0 ? `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" class="rc">${raceCode(r.name)}<title>${esc(r.name)}</title></text>` : '')).join('')}
       ${lines}
     </svg>
-    <div class="legend">${board.map((b, i) => `<span class="small"><span class="dot" style="background:${color(i)}"></span>${esc(b.name)}</span>`).join('')}</div></div>`;
+    <div class="legend">${board.map((b, i) => `<span class="small who-row" style="gap:6px"><span class="dot" style="background:${color(i)};margin:0"></span>${formAvatar(b.user || b, 24, forms[i])}${esc(b.name)}</span>`).join('')}</div></div>`;
 }
 
 function remarks(races, board, color) {
@@ -455,10 +457,37 @@ function remarks(races, board, color) {
 
 function perRaceTable(races, board) {
   return `<div class="panel flush"><div class="scroll"><table><thead><tr><th>Race</th>${board.map((b) => `<th class="r">${esc(b.name)}</th>`).join('')}</tr></thead><tbody>
-    ${races.map((r, i) => `<tr><td>R${r.round} · ${esc(shortGp(r.name))}</td>${board.map((b) => { const p = b.per_race[i];
+    ${races.map((r, i) => `<tr><td><span class="rcode">${raceCode(r.name)}</span> ${esc(shortGp(r.name))}</td>${board.map((b) => { const p = b.per_race[i];
       return `<td class="r ${p.pts ? 'up' : 'same'}">${p.pts ? '+' + p.pts : p.submitted ? '=' : '–'}</td>`; }).join('')}</tr>`).join('')}
     <tr><td><b>Total</b></td>${board.map((b) => `<td class="r"><b>${b.total}</b></td>`).join('')}</tr>
     </tbody></table></div></div><p class="muted small">“–” means no prediction was submitted for that race.</p>`;
+}
+
+// Short race labels for charts ("AUS", "MON"…); the full name is in the tooltip.
+const RACE_CODES = [['Australia', 'AUS'], ['Chin', 'CHN'], ['Japan', 'JPN'], ['Bahrain', 'BHR'], ['Saudi', 'KSA'], ['Miami', 'MIA'], ['Emilia', 'IMO'],
+  ['Monaco', 'MON'], ['Barcelona', 'BAR'], ['Spanish', 'ESP'], ['Spain', 'ESP'], ['Madrid', 'MAD'], ['Canad', 'CAN'], ['Austria', 'AUT'], ['British', 'GBR'], ['Belgi', 'BEL'],
+  ['Hungar', 'HUN'], ['Dutch', 'NED'], ['Ital', 'ITA'], ['Azerbaijan', 'AZE'], ['Singapore', 'SIN'], ['United States', 'USA'], ['Mexic', 'MEX'],
+  ['Paulo', 'BRA'], ['Brazil', 'BRA'], ['Vegas', 'LVG'], ['Qatar', 'QAT'], ['Abu Dhabi', 'ABU'], ['Portug', 'POR'], ['Turk', 'TUR'], ['French', 'FRA']];
+function raceCode(name) {
+  const hit = RACE_CODES.find(([k]) => String(name).includes(k));
+  return hit ? hit[1] : String(name).replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase();
+}
+
+// Form over the last 3 scored races compared with the player's own average:
+// on fire = clearly better than usual, icy = clearly worse (or nothing at all).
+function formOf(perRace) {
+  const pts = perRace.map((p) => p.pts || 0);
+  if (pts.length < 4) return null;
+  const recent = pts.slice(-3);
+  const recentAvg = recent.reduce((a, b) => a + b, 0) / 3;
+  const avg = pts.reduce((a, b) => a + b, 0) / pts.length;
+  if (recentAvg >= Math.max(2, avg * 1.5)) return { kind: 'fire', tip: `On fire: ${recent.join(' + ')} points in the last 3 races (usually ${avg.toFixed(1)} per race)` };
+  if (recentAvg === 0 || (avg >= 1 && recentAvg <= avg * 0.4)) return { kind: 'ice', tip: `Ice cold: ${recent.join(' + ')} points in the last 3 races (usually ${avg.toFixed(1)} per race)` };
+  return null;
+}
+function formAvatar(u, size, form) {
+  if (!form) return userAvatar(u, size);
+  return `<span class="form ${form.kind}" title="${esc(form.tip)}">${userAvatar(u, size)}<i>${form.kind === 'fire' ? '🔥' : '🧊'}</i></span>`;
 }
 
 // ------------------------------------------------------------- race page
@@ -502,7 +531,7 @@ async function raceView(lid, round) {
     </div>
     <div id="insights"><div class="panel muted small">Loading qualifying and track history…</div></div>
     ${results ? resultsPanel(results) : ''}
-    ${data.locked ? othersPanel(others, missing, !!results) : `<p class="muted small">Other players' predictions become visible when the race starts.</p>`}`);
+    ${data.locked ? `<div id="board-box">${predictionBoard(mine, others, missing, !!results, round)}</div>` : `<p class="muted small">Other players' predictions become visible when the race starts.</p>`}`);
   paintSlots(mine && mine.detail);
   if (!data.locked) startCountdown('cd', race.race_ts, 'closes in ');
   loadInsights(round);
@@ -849,14 +878,84 @@ function resultsPanel(results) {
     <p class="muted small" style="margin-top:12px">Did not finish: ${dnf || 'nobody'}</p></div>`;
 }
 
-function othersPanel(others, missing, scored) {
-  const nm = (id) => { const d = driverById(id); return d ? d.code || d.name : '?'; };
-  const card = (p) => `<div class="panel" style="margin-bottom:10px"><div class="row between"><a class="who-row plain" href="/player/${p.user_id}" data-link>${userAvatar({ id: p.user_id, name: p.user_name, avatar: p.user_avatar }, 34)}<b>${esc(p.user_name)}</b></a>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</div>
-    <div class="picks" style="margin-top:8px">${SLOTS.map((k) => `<span class="pk ${p.detail && p.detail[k] ? 'ok' : ''}"><b>${k.toUpperCase()}</b>${esc(nm(p[k]))}</span>`).join('')}
-    ${p.dnfs.map((d, i) => `<span class="pk ${p.detail && p.detail.dnfs[i] ? 'ok' : ''}"><b>DNF</b>${esc(nm(d))}</span>`).join('')}</div></div>`;
-  return `<h2>Everyone's predictions</h2>${others.map(card).join('') || '<p class="muted">Nobody else has a valid prediction for this race.</p>'}
-    ${missing.length ? `<p class="muted small">No prediction from: ${missing.map(esc).join(', ')}</p>` : ''}`;
+// Excuses for players who sent nothing; the same player gets the same excuse for the same race.
+const DNS_EXCUSES = [
+  'Dog ate the phone', 'Car engine failure on the way, did not make it in time', 'Was stuck in a 2-hour safety car queue at the supermarket',
+  'Phone battery died at 1%', 'Forgot the password, again', 'Pit crew lost the phone', 'Was busy changing tyres on the family car',
+  'Fell asleep during practice', 'Internet went red-flagged', 'Thought the race was next week', 'Grandma\'s birthday, no phones at the table',
+  'Wi-Fi in the cottage: none', 'Gearbox failure (in the brain)', 'Stuck behind a tractor, could not overtake', 'Penalty: 5 seconds too late',
+  'Was arguing with the TV about the last race', 'Brakes overheated after a long week', 'Left the phone in the other jacket',
+  'Kids hid the phone', 'Team orders: had to let the others through', 'Went to the sauna and lost track of time', 'Strategy call: plan B, then no plan',
+  'Too nervous to choose', 'Rain at the house, waited for intermediates', 'Washing machine flooded the paddock',
+];
+function dnsExcuse(userId, round) {
+  const h = [...`${userId}:${round}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return DNS_EXCUSES[h % DNS_EXCUSES.length];
 }
+
+let boardCtx = null;
+function predictionBoard(mine, others, missing, scored, round) {
+  const players = [...(mine && ['ok', 'late_approved'].includes(mine.status) ? [{ ...mine, me: true }] : []), ...others]
+    .map((p) => ({ ...p, user: { id: p.user_id, name: p.user_name, avatar: p.user_avatar } }));
+  if (scored) players.sort((a, b) => (b.points || 0) - (a.points || 0));
+  const dns = missing.map((u) => ({ user: u, excuse: dnsExcuse(u.id, round) }));
+  boardCtx = { players, scored };
+  if (!players.length && !dns.length) return '';
+
+  const dnfRows = Math.max(0, ...players.map((p) => p.dnfs.length));
+  const rows = [...SLOTS.map((k) => ({ key: k, label: k.toUpperCase() })), ...Array.from({ length: dnfRows }, (_, i) => ({ key: 'dnf', i, label: 'DNF' }))];
+  const pickOf = (p, r) => (r.key === 'dnf' ? p.dnfs[r.i] : p[r.key]);
+  const okOf = (p, r) => !!(p.detail && (r.key === 'dnf' ? p.detail.dnfs[r.i] : p.detail[r.key]));
+  const chip = (id, ok) => {
+    const d = driverById(id);
+    if (!id) return '<span class="muted">-</span>';
+    return `<span class="bpick ${ok ? 'ok' : ''}" title="${esc(d ? d.name : id)}">${avatar(d, 24)}<b>${esc(d ? d.code || d.name : '?')}</b></span>`;
+  };
+  // most popular pick in each row (only when at least two players agree)
+  const popular = rows.map((r) => {
+    const count = {};
+    players.forEach((p) => { const id = pickOf(p, r); if (id) count[id] = (count[id] || 0) + 1; });
+    const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+    return top && top[1] >= 2 ? top : null;
+  });
+
+  const head = players.map((p) => `<th class="bcol"><a class="plain bhead" href="/player/${p.user.id}" data-link>${userAvatar(p.user, 34)}<span>${esc(p.user.name)}${p.me ? ' (you)' : ''}</span>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</a></th>`).join('')
+    + dns.map((d) => `<th class="bcol dns"><a class="plain bhead" href="/player/${d.user.id}" data-link>${userAvatar(d.user, 34)}<span>${esc(d.user.name)}</span><span class="chip red">DNS</span></a></th>`).join('');
+  const body = rows.map((r, ri) => `<tr><th class="bslot">${r.label}</th>${players.map((p) => `<td>${chip(pickOf(p, r), okOf(p, r))}</td>`).join('')}
+      ${ri === 0 ? dns.map((d) => `<td class="dns-cell" rowspan="${rows.length}"><div><b>Did not start</b><span>${esc(d.excuse)}</span></div></td>`).join('') : ''}
+      <td class="bpop">${popular[ri] ? `${chip(popular[ri][0], false)} <span class="muted small">×${popular[ri][1]}</span>` : ''}</td></tr>`).join('');
+
+  const options = (sel) => players.map((p, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${esc(p.user.name)}${p.me ? ' (you)' : ''}</option>`).join('');
+  const rival = players.length >= 2 ? `<div class="panel"><h3>Head to head</h3>
+      <div class="row"><select id="riv-a" style="width:auto;flex:1">${options(0)}</select><span class="muted">vs</span><select id="riv-b" style="width:auto;flex:1">${options(1)}</select></div>
+      <div id="riv-out">${rivalry(0, 1)}</div></div>` : '';
+
+  return `<h2>Prediction board</h2>
+    <div class="panel flush"><div class="scroll"><table class="board"><thead><tr><th></th>${head}<th class="bpop">Most picked</th></tr></thead><tbody>${body}</tbody></table></div></div>
+    ${scored ? '<p class="muted small">Green = right pick.</p>' : ''}${rival}`;
+}
+
+function rivalry(ai, bi) {
+  const { players, scored } = boardCtx;
+  const A = players[ai], B = players[bi];
+  if (!A || !B || A === B) return '<p class="muted small">Choose two different players.</p>';
+  const name = (id) => { const d = driverById(id); return d ? d.code || d.name : '-'; };
+  const rows = [...SLOTS.map((k) => [k.toUpperCase(), A[k], B[k], A.detail?.[k], B.detail?.[k]]),
+    ...Array.from({ length: Math.max(A.dnfs.length, B.dnfs.length) }, (_, i) => ['DNF', A.dnfs[i], B.dnfs[i], A.detail?.dnfs[i], B.detail?.dnfs[i]])];
+  // a DNF pick counts as shared when the other player also has that driver among their DNFs
+  const same = (r) => (r[0] === 'DNF' ? r[1] && B.dnfs.includes(r[1]) : r[1] && r[1] === r[2]);
+  const agree = rows.filter(same).length;
+  const cell = (id, ok) => `<span class="${ok ? 'up' : ''}">${esc(name(id))}${ok ? ' ✓' : ''}</span>`;
+  return `<div class="facts" style="margin-top:12px"><span>Agreed on <b>${agree}</b> of ${rows.length} picks</span>
+      ${scored ? `<span><b>${esc(A.user.name)}</b> ${A.points} : ${B.points} <b>${esc(B.user.name)}</b></span>` : ''}</div>
+    <table class="riv"><tbody>${rows.map((r) => `<tr class="${same(r) ? 'same-pick' : 'diff-pick'}"><td class="r">${cell(r[1], r[3])}</td><th>${r[0]}</th><td>${cell(r[2], r[4])}</td></tr>`).join('')}</tbody></table>`;
+}
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'riv-a' || e.target.id === 'riv-b') {
+    const out = document.getElementById('riv-out');
+    if (out) out.innerHTML = rivalry(Number(document.getElementById('riv-a').value), Number(document.getElementById('riv-b').value));
+  }
+});
 
 // ------------------------------------------------------------------- WPC
 // World Prediction Champion: our championship over the seasons (/wpc) and player profiles (/player/...).
@@ -888,11 +987,14 @@ async function wpcView(year) {
     ${alltime.map((p) => `<tr><td>${playerName(p)}</td><td class="cups">${titlesCell(p)}</td><td class="r num"><b>${p.titles}</b></td><td class="r num">${p.podiums}</td><td class="r num">${p.best ? placeLabel(p.best) : '-'}</td><td class="r num">${p.seasons}</td><td class="r num">${p.points}</td></tr>`).join('')}
     </tbody></table></div></div>`;
   const color = (i) => COLORS[i % COLORS.length];
-  const board = pick.rows.map((r) => ({ ...r, per_race: r.totals.map((t, i) => ({ total: t ?? 0, pts: (t ?? 0) - (i ? r.totals[i - 1] ?? 0 : 0) })) }));
+  const board = pick.rows.map((r) => {
+    const per_race = r.totals.map((t, i) => ({ total: t ?? 0, pts: (t ?? 0) - (i ? r.totals[i - 1] ?? 0 : 0) }));
+    return { ...r, per_race, form: pick.live ? formOf(per_race) : null };
+  });
   const races = pick.races.map((n, i) => ({ round: i + 1, name: n }));
   const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th></tr></thead><tbody>
     ${pick.rows.map((r, i) => `<tr class="${r.position === 1 ? 'lead' : ''}"><td class="num">${!pick.live && MEDAL[r.position] ? cupSvg(MEDAL[r.position], 18) : r.position}</td>
-      <td><span class="who-row"><span class="dot" style="background:${color(i)}"></span>${playerName(r)}</span></td><td class="r num"><b>${r.total}</b></td></tr>`).join('')}
+      <td><span class="who-row"><span class="dot" style="background:${color(i)}"></span><a class="who-row plain" href="${playerHref(r)}" data-link>${formAvatar(r.user || { name: r.name }, 28, board[i].form)}<span>${esc(r.name)}</span></a></span></td><td class="r num"><b>${r.total}</b></td></tr>`).join('')}
     </tbody></table></div></div>`;
   app.innerHTML = shell(`
     <div class="row between"><h1>${cupSvg('gold', 30)} World Prediction Champion</h1><a class="small muted" href="/" data-link>← Home</a></div>

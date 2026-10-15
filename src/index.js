@@ -570,10 +570,10 @@ async function getRacePredictions(env, lid, round, user) {
   if (locked) {
     others = rows.filter((p) => p.user_id !== user.id && ['ok', 'late_approved'].includes(p.status)).map((p) => shapePrediction(p, lookup));
     const { results: members } = await env.DB.prepare(
-      `SELECT u.id, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=?`
+      `SELECT u.id, u.name, u.avatar FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=?`
     ).bind(lid).all();
     const have = new Set(rows.filter((p) => ['ok', 'late_approved'].includes(p.status)).map((p) => p.user_id));
-    missing = members.filter((u) => !have.has(u.id)).map((u) => u.name);
+    missing = members.filter((u) => !have.has(u.id)).map((u) => ({ id: u.id, name: u.name, avatar: u.avatar }));
   }
 
   let resultView = null;
