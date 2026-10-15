@@ -34,12 +34,21 @@ export class Budget {
   spend(n) { this.left = Math.max(0, this.left - n); }
 }
 
+// Jolpica allows a few requests per second and a few hundred per hour, and Workers share their
+// outgoing addresses with other sites, so "too many requests" (429) does happen. It waits as long as
+// the answer asks (up to 15 s) and tries again; if it keeps happening the job stops for this run and
+// carries on 30 minutes later.
+export class RateLimited extends Error {}
 async function getJolpica(env, path) {
-  const gap = env.JOLPICA_DELAY_MS !== undefined ? Number(env.JOLPICA_DELAY_MS) : 350;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const gap = env.JOLPICA_DELAY_MS !== undefined ? Number(env.JOLPICA_DELAY_MS) : 600;
+  for (let attempt = 0; attempt < 3; attempt++) {
     await sleep(gap);
     const res = await fetch(`${jolpica(env)}${path}`, { headers: { 'User-Agent': UA, accept: 'application/json' } });
-    if (res.status === 429 && attempt === 0) { await sleep(2000); continue; }
+    if (res.status === 429) {
+      const wait = Math.min(15, Number(res.headers.get('retry-after')) || 4 * (attempt + 1));
+      if (attempt < 2) { await sleep(gap ? wait * 1000 : 0); continue; }
+      throw new RateLimited(`${path} -> HTTP 429`);
+    }
     if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
     return res.json();
   }
@@ -276,7 +285,10 @@ async function syncEditionStats(env, budget, ed) {
     try {
       const data = await getJolpica(env, `/${ed.season}/${ed.round}/pitstops.json?limit=100`);
       for (const p of data.MRData.RaceTable.Races?.[0]?.PitStops || []) pitLaps.add(`${p.driverId}:${p.lap}`);
-    } catch (e) { console.error('Pit stops', ed.season, ed.round, e.message); }
+    } catch (e) {
+      if (e instanceof RateLimited) throw e; // without pit stops the overtake count would be far too high
+      console.error('Pit stops', ed.season, ed.round, e.message);
+    }
   }
   const s = laps.length ? lapStats(laps, pitLaps) : { laps: null, lead_changes: null, leaders: null, overtakes: null };
   await env.DB.prepare(
@@ -297,7 +309,11 @@ export async function syncTrackHistory(env, budget) {
     if (!meta) {
       try {
         if (!(await syncPodiums(env, budget, c.circuit_id))) break;
-      } catch (e) { console.error('Podiums', c.circuit_id, e.message); continue; }
+      } catch (e) {
+        if (e instanceof RateLimited) throw e;
+        console.error('Podiums', c.circuit_id, e.message);
+        continue;
+      }
     }
     const { results: todo } = await env.DB.prepare(
       `SELECT circuit_id, season, round FROM track_history WHERE circuit_id=? AND stats_done=0 ORDER BY season DESC`
@@ -306,7 +322,10 @@ export async function syncTrackHistory(env, budget) {
       if (budget.left < EDITION_COST) return editions;
       try {
         if (await syncEditionStats(env, budget, ed)) editions++;
-      } catch (e) { console.error('Lap stats', ed.season, ed.round, e.message); }
+      } catch (e) {
+        if (e instanceof RateLimited) throw e;
+        console.error('Lap stats', ed.season, ed.round, e.message);
+      }
     }
   }
   return editions;

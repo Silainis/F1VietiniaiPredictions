@@ -20,10 +20,10 @@ const season = (env) => env.SEASON || String(new Date().getUTCFullYear());
 // and a rate-limit answer (429) is retried once after a pause.
 async function getJson(env, url) {
   const gap = env.JOLPICA_DELAY_MS !== undefined ? Number(env.JOLPICA_DELAY_MS) : 350;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     await sleep(gap);
     const res = await fetch(url, { headers: { 'User-Agent': UA, accept: 'application/json' } });
-    if (res.status === 429 && attempt === 0) { await sleep(2000); continue; }
+    if (res.status === 429 && attempt < 2) { await sleep(gap ? Math.min(15, Number(res.headers.get('retry-after')) || 4 * (attempt + 1)) * 1000 : 0); continue; }
     if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
     return res.json();
   }
