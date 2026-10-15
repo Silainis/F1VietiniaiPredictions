@@ -14,7 +14,7 @@ export const PLAYERS = {
   'Agnė': 'agny',
   'Martynas': 'martynas',
   'Darius': 'muerto',
-  // no account yet: Vakaris, Eglė, Karolis, Justas, Racer X, Andrius, Ramūnas, Veronika
+  // no account yet: Vakaris, Eglė, Karolis, Justas, Andrius, Ramūnas, Veronika
 };
 
 const R2024 = ['Bahrain', 'Saudi Arabian', 'Australian', 'Japanese', 'Chinese', 'Miami', 'Emilia Romagna', 'Monaco', 'Canadian', 'Spanish', 'Austrian', 'British',
@@ -45,8 +45,8 @@ export const HISTORY = [
     season: 2025,
     races: R2025,
     // The Abu Dhabi column was empty in the spreadsheet; standings are taken after Qatar.
+    // ("Racer X", an AI guesser added for fun, is left out on purpose.)
     rows: {
-      'Racer X': [1, 3, 9, 11, 11, 12, 12, 15, 18, 20, 23, 24, 26, 28, 29, 33, 35, 37, 41, 43, 45, 45, 46, null],
       'Agnė': [1, 4, 4, 5, 6, 8, 9, 12, 15, 16, 21, 22, 24, 26, 27, 31, 32, 34, 38, 40, 42, 42, 42, null],
       'Vakaris': [2, 4, 6, 8, 10, 12, 13, 16, 19, 20, 23, 25, 28, 29, 30, 33, 34, 35, 37, 38, 39, 39, 40, null],
       'Darius': [1, 2, 2, 4, 6, 7, 8, 11, 14, 14, 16, 18, 21, 21, 22, 26, 27, 29, 33, 37, 39, 39, 40, null],
