@@ -111,6 +111,12 @@ export const SCHEMA = [
     circuit_id TEXT PRIMARY KEY,
     podiums_at INTEGER
   )`,
+  // What the last scheduled syncs did (kept short), to see from the database whether imports work.
+  `CREATE TABLE IF NOT EXISTS sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    result TEXT NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications (user_id, read)`,
   `CREATE INDEX IF NOT EXISTS idx_pred_league_round ON predictions (league_id, round)`,
 ];

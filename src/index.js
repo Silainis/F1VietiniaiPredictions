@@ -31,7 +31,14 @@ export default {
 
   // Runs on the cron schedule from wrangler.jsonc.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil((async () => { await ensureSchema(env); await syncAll(env); })());
+    ctx.waitUntil((async () => {
+      await ensureSchema(env);
+      const out = await syncAll(env);
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO sync_log (at, result) VALUES (?, ?)`).bind(Date.now(), JSON.stringify(out)),
+        env.DB.prepare(`DELETE FROM sync_log WHERE id NOT IN (SELECT id FROM sync_log ORDER BY id DESC LIMIT 20)`),
+      ]).catch((e) => console.error('sync_log', e));
+    })());
   },
 };
 
