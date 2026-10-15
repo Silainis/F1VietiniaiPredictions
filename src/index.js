@@ -5,7 +5,7 @@ import {
 import { sendMail, emailTemplate } from './mail.js';
 import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
-import { getRaceInsights } from './insights.js';
+import { getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
 let assetsApplied = null;
@@ -219,6 +219,17 @@ async function handleApi(request, env, ctx, url) {
     const data = await getRaceInsights(env, Number(m[1]));
     if (!data) throw new HttpError(404, 'Race not found.');
     return json(data);
+  }
+
+  // track history collected by the browser (see collectHistory in public/app.js)
+  if ((m = path.match(/^\/api\/races\/(\d+)\/history$/)) && method === 'POST') {
+    const b = await readBody(request);
+    if (!(await saveHistoryPodiums(env, Number(m[1]), b.editions))) throw new HttpError(400, 'Invalid history.');
+    return json({ ok: true });
+  }
+  if ((m = path.match(/^\/api\/races\/(\d+)\/history\/(\d{4})$/)) && method === 'POST') {
+    if (!(await saveEditionStats(env, Number(m[1]), Number(m[2]), await readBody(request)))) throw new HttpError(400, 'Invalid history.');
+    return json({ ok: true });
   }
 
   if (method === 'GET' && path === '/api/drivers') {

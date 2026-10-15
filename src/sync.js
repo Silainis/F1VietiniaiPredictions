@@ -7,7 +7,7 @@
 
 import { f1PhotoFor } from './f1photos.js';
 import { f1TrackFor } from './f1tracks.js';
-import { Budget, syncQualifying, syncTrackHistory } from './insights.js';
+import { Budget, syncQualifying } from './insights.js';
 
 const UA = 'f1-vietiniai-predictions/1.0 (https://f1-vietiniai-predictions.f1vietiniai.workers.dev)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -190,7 +190,7 @@ export async function syncImages(env, max = 30) {
 }
 
 // One run makes at most ~45 outside requests (the free Workers plan allows 50). The fixed jobs go
-// first; qualifying, track history and missing photos share what is left, in that order.
+// first; qualifying and missing photos share what is left.
 export async function syncAll(env, { extras = true } = {}) {
   const out = {};
   const budget = new Budget(Number(env.SYNC_BUDGET || 45));
@@ -202,7 +202,6 @@ export async function syncAll(env, { extras = true } = {}) {
   try { out.f1photos = await applyF1Photos(env); } catch (e) { out.f1photosError = e.message; }
   if (extras) {
     try { out.qualifying = await syncQualifying(env, budget); } catch (e) { out.qualifyingError = e.message; }
-    try { out.history = await syncTrackHistory(env, budget); } catch (e) { out.historyError = e.message; }
   }
   try { out.images = await syncImages(env, Math.min(10, budget.left)); } catch (e) { out.imagesError = e.message; }
   return out;

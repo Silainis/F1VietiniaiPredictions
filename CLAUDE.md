@@ -23,10 +23,14 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   Qualifying: formula1.com results page (meeting id read from /en/results/<year>/races, stored in races.f1_meeting_id), Jolpica fallback.
   Before it is published the page says it is not public yet; history still shows.
   History: last 5 editions at the circuit (podium + winner's grid), lead changes, overtakes estimated from Jolpica laps
-  (pit in/out laps and >15% slow cars excluded, first lap excluded). Cached forever in track_history.
+  (pit in/out laps and >15% slow cars excluded, first lap excluded). Jolpica answers the Worker with HTTP 429, so the
+  first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
+  the server validates and only fills empty rows. Cached forever in track_history.
 
 ## Working notes
 - Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
-- Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, track history, Wikipedia photos.
+- Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, Wikipedia photos.
+- Jolpica rate-limits the Worker (HTTP 429 seen on 2026-10-15, e.g. drivers.json). Watch sync_log in D1 (last 20 cron results);
+  if race results stop arriving, a formula1.com race-result fallback may be needed.
 - Photo/track/team lists need re-checking at the start of each season (README sections 7 and 8).
 - Tests used so far were local scripts (mock Jolpica, D1 shim); they are not in the repo.

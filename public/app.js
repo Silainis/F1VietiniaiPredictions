@@ -447,7 +447,115 @@ async function loadInsights(round) {
   try { data = await api(`/races/${round}/insights`); } catch { data = null; }
   const el = document.getElementById('insights');
   if (!el || !raceCtx || raceCtx.round !== round) return; // the user moved on to another page
-  el.innerHTML = data ? qualiPanel(data.qualifying) + historyPanel(data.history) : '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>';
+  if (!data) { el.innerHTML = '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>'; return; }
+  el.innerHTML = `${qualiPanel(data.qualifying)}<div id="hist-box">${historyPanel(data.history)}</div>`;
+  if (['loading', 'partial'].includes(data.history.status)) collectHistory(round, data.history);
+}
+
+// Past races come from the Jolpica F1 API. Its servers turn away requests from Cloudflare, so the
+// browser of the first player who opens a race page collects the history and the app stores it for
+// everyone (once per circuit). Overtakes and lead changes are worked out from the lap-by-lap positions.
+const JOLPICA = 'https://api.jolpi.ca/ergast/f1';
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+let collecting = null;
+
+async function jolpica(path) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await pause(300);
+    const res = await fetch(JOLPICA + path);
+    if (res.status === 429) { await pause((Number(res.headers.get('retry-after')) || 5 * (attempt + 1)) * 1000); continue; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+  throw new Error('busy');
+}
+
+function showHistory(round, h, note) {
+  const box = document.getElementById('hist-box');
+  if (box && raceCtx && raceCtx.round === round) box.innerHTML = historyPanel(h, note);
+}
+
+async function collectHistory(round, h) {
+  if (collecting === h.circuit_id) return;
+  collecting = h.circuit_id;
+  try {
+    if (h.status === 'loading') {
+      showHistory(round, h, 'Looking up past winners…');
+      const byPos = [];
+      for (const p of [1, 2, 3]) byPos.push((await jolpica(`/circuits/${h.circuit_id}/results/${p}.json?limit=100`)).MRData.RaceTable.Races || []);
+      const editions = byPos[0].filter((r) => Number(r.season) < h.season).slice(-h.years).map((r) => ({
+        season: Number(r.season), round: Number(r.round), race_name: r.raceName,
+        podium: byPos.map((list) => {
+          const x = list.find((y) => y.season === r.season)?.Results?.[0];
+          return x ? { driver_id: x.Driver.driverId, code: x.Driver.code || null, name: `${x.Driver.givenName} ${x.Driver.familyName}`, team: x.Constructor?.name || null, grid: Number(x.grid) || null } : null;
+        }),
+      }));
+      await api(`/races/${round}/history`, { method: 'POST', body: { editions } });
+      h = (await api(`/races/${round}/insights`)).history;
+    }
+    const todo = h.editions.filter((e) => !e.stats_done);
+    for (let i = 0; i < todo.length; i++) {
+      const ed = todo[i];
+      showHistory(round, h, `Counting overtakes and lead changes: ${ed.season} (${i + 1} of ${todo.length})…`);
+      const stats = await editionStats(ed);
+      await api(`/races/${round}/history/${ed.season}`, { method: 'POST', body: stats });
+      Object.assign(ed, stats, { stats_done: true });
+    }
+    h.status = 'ready';
+    showHistory(round, h);
+  } catch {
+    showHistory(round, h, 'The race data service is busy right now. Open this page again later to finish the history.');
+  } finally {
+    collecting = null;
+  }
+}
+
+async function editionStats(ed) {
+  const laps = [];
+  for (let offset = 0, total = 1; offset < total; offset += 100) {
+    const d = await jolpica(`/${ed.season}/${ed.round}/laps.json?limit=100&offset=${offset}`);
+    total = Number(d.MRData.total) || 0;
+    const page = d.MRData.RaceTable.Races?.[0]?.Laps || [];
+    if (!page.length) break;
+    for (const lap of page) {
+      const same = laps.find((l) => l.number === lap.number);
+      if (same) same.Timings.push(...lap.Timings); // a lap can be split over two pages
+      else laps.push({ number: lap.number, Timings: [...lap.Timings] });
+    }
+  }
+  if (!laps.length) return { laps: null, lead_changes: null, leaders: null, overtakes: null };
+  const d = await jolpica(`/${ed.season}/${ed.round}/pitstops.json?limit=100`);
+  const pits = new Set((d.MRData.RaceTable.Races?.[0]?.PitStops || []).map((p) => `${p.driverId}:${p.lap}`));
+  return lapStats(laps, pits);
+}
+
+// A position swap between two laps counts as an overtake unless one of the two was in the pits on
+// that lap or the lap after (in-lap / out-lap), or the passed car was over 15% slower than the field
+// that lap (damage, a spin, retiring). The opening lap is not counted. Checked against real races:
+// Monaco 2024 gives 7, Singapore 2025 gives 28; without the pit filter Singapore would show over 100.
+function lapStats(laps, pits) {
+  const secs = (t) => { const m = String(t || '').match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/); return m ? Number(m[1] || 0) * 60 + Number(m[2]) : null; };
+  const sorted = [...laps].sort((a, b) => a.number - b.number);
+  let leadChanges = 0, overtakes = 0, prev = null;
+  const leaders = new Set();
+  for (const lap of sorted) {
+    const n = Number(lap.number);
+    const pos = new Map(lap.Timings.map((t) => [t.driverId, Number(t.position)]));
+    const time = new Map(lap.Timings.map((t) => [t.driverId, secs(t.time)]));
+    const all = [...time.values()].filter(Boolean).sort((a, b) => a - b);
+    const median = all[Math.floor(all.length / 2)];
+    const leader = lap.Timings.find((t) => Number(t.position) === 1)?.driverId;
+    if (leader) leaders.add(leader);
+    if (prev) {
+      if (leader && prev.leader && leader !== prev.leader) leadChanges++;
+      const ids = [...pos.keys()].filter((id) => prev.pos.has(id) && !pits.has(`${id}:${n}`) && !pits.has(`${id}:${n - 1}`));
+      for (const a of ids) for (const b of ids) {
+        if (a !== b && prev.pos.get(a) > prev.pos.get(b) && pos.get(a) < pos.get(b) && !(median && time.get(b) > median * 1.15)) overtakes++;
+      }
+    }
+    prev = { leader, pos };
+  }
+  return { laps: sorted.length, lead_changes: leadChanges, leaders: leaders.size, overtakes };
 }
 
 const surname = (name) => String(name || '').split(' ').slice(-1)[0];
@@ -475,9 +583,10 @@ function qualiPanel(q) {
     <p class="muted small" style="margin-top:8px">Qualifying order, not the final starting grid: grid penalties can still move drivers.${q.source === 'jolpica' ? ' Source: Jolpica F1.' : ''}</p></div>`;
 }
 
-function historyPanel(h) {
+function historyPanel(h, note) {
   const head = `<h2>Track history</h2>`;
-  if (h.status === 'loading') return `<div class="panel">${head}<p class="muted">The history of this track is still being collected. Check back in a little while.</p></div>`;
+  const noteHtml = note ? `<p class="hist-note">${esc(note)}</p>` : '';
+  if (h.status === 'loading') return `<div class="panel">${head}${noteHtml || '<p class="muted">Collecting the history of this track…</p>'}<p class="muted small">This takes about half a minute and is only needed once per track.</p></div>`;
   if (h.status === 'none' || !h.editions.length) return `<div class="panel">${head}<p class="muted">This is the first Formula 1 race at this circuit, so there is no history yet.</p></div>`;
 
   const eds = h.editions;
@@ -501,10 +610,10 @@ function historyPanel(h) {
   const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0];
   if (top && top[1] > 1) facts.push(`<b>${esc(top[0])}</b> won here ${top[1]} times`);
 
-  return `<div class="panel">${head}
+  return `<div class="panel">${head}${noteHtml}
     ${facts.length ? `<div class="facts">${facts.map((f) => `<span>${f}</span>`).join('')}</div>` : ''}
     <div class="scroll"><table class="hist"><thead><tr><th>Year</th><th>Winner</th><th>2nd</th><th>3rd</th><th class="r">Lead changes</th><th class="r">Overtakes</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted small" style="margin-top:8px">Last ${eds.length} race${eds.length === 1 ? '' : 's'} at this circuit. Overtakes are estimated from lap-by-lap positions (leaving out pit stops, cars that slowed down sharply and the first lap), so they can differ from official counts. Lead changes include leads swapped during pit stops. ${h.status === 'partial' ? 'Some years are still being collected (…). ' : ''}Data: Jolpica F1.</p></div>`;
+    <p class="muted small" style="margin-top:8px">Last ${eds.length} race${eds.length === 1 ? '' : 's'} at this circuit. Overtakes are estimated from lap-by-lap positions (leaving out pit stops, cars that slowed down sharply and the first lap), so they can differ from official counts. Lead changes include leads swapped during pit stops. Data: Jolpica F1.</p></div>`;
 }
 
 function slotButton(key, label, id, detail, idx) {
