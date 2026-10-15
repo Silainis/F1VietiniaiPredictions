@@ -111,7 +111,7 @@ Then in `wrangler.jsonc` set `"MAIL_FROM": "F1 Predictions <noreply@yourdomain.c
 - **A track map is missing (chequered flag shown).** That circuit is not listed in `src/f1tracks.js` yet; see "Updating track maps" below. The circuit ids the app uses are visible at `/api/races` (while logged in).
 - **Images appear slowly right after the first deploy.** Driver photos and track maps are applied immediately; only the Wikipedia fallback for unlisted drivers is fetched in small batches (the free plan allows 50 outgoing requests per run), so it fills in over a few 30-minute cycles, or immediately via the `/api/admin/sync` link above.
 - **Results did not arrive after a race.** They are fetched 2 hours after the start time, then every 30 minutes until published.
-- **Qualifying says "not public yet" after the session.** It is checked every 30 minutes from one hour after qualifying, and read once more a couple of hours later in case of penalties. The table shows the qualifying order, not the final grid.
+- **Qualifying says "not public yet" after the session.** From the start of qualifying until the race starts, opening the race page checks formula1.com right away (at most once a minute for everybody), an open page checks again every 2 minutes, and the 30-minute schedule checks too. The official starting grid (after penalties) is added as a Grid column once formula1.com publishes it.
 - **Track history says the data service is busy.** Jolpica limits how many requests one visitor can make; open the race page again later and it continues where it stopped. Once a track is complete it is never fetched again.
 - **Run it locally:** create a file `.dev.vars` with `ADMIN_KEY=anything`, then `npm run dev` and open http://localhost:8787.
 

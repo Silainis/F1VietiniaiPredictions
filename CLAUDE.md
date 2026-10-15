@@ -22,6 +22,9 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - Race page shows a Qualifying table and Track history (`src/insights.js`, `GET /api/races/:round/insights`).
   Qualifying: formula1.com results page (meeting id read from /en/results/<year>/races, stored in races.f1_meeting_id), Jolpica fallback.
   Before it is published the page says it is not public yet; history still shows.
+  Live: opening the race page of a race that has not started (after quali start) re-reads formula1.com, at most once a
+  minute for all users (claim via races.quali_checked_at); open pages re-ask every 2 min. Starting grid
+  (/starting-grid page) is stored in qualifying.grid and shown as a Grid column once published.
   History: last 5 editions at the circuit (podium + winner's grid), lead changes, overtakes estimated from Jolpica laps
   (pit in/out laps and >15% slow cars excluded, first lap excluded). Jolpica answers the Worker with HTTP 429, so the
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];

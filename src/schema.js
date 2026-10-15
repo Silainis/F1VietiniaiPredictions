@@ -136,6 +136,7 @@ export function ensureSchema(env) {
         `ALTER TABLE races ADD COLUMN f1_meeting_id TEXT`,
         `ALTER TABLE races ADD COLUMN f1_slug TEXT`,
         `ALTER TABLE races ADD COLUMN quali_checked_at INTEGER`,
+        `ALTER TABLE qualifying ADD COLUMN grid TEXT`,
       ]))
       .catch((e) => {
       ready = null;

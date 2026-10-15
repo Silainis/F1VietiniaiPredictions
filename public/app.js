@@ -448,8 +448,33 @@ async function loadInsights(round) {
   const el = document.getElementById('insights');
   if (!el || !raceCtx || raceCtx.round !== round) return; // the user moved on to another page
   if (!data) { el.innerHTML = '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>'; return; }
-  el.innerHTML = `${qualiPanel(data.qualifying)}<div id="hist-box">${historyPanel(data.history)}</div>`;
+  el.innerHTML = `<div id="quali-box">${qualiPanel(data.qualifying)}</div><div id="hist-box">${historyPanel(data.history)}</div>`;
   if (['loading', 'partial'].includes(data.history.status)) collectHistory(round, data.history);
+  if (data.qualifying.live) watchQualifying(round);
+}
+
+// While qualifying is underway or the race is still to start, the server re-reads formula1.com when
+// the page is opened (at most once a minute for everybody), and an open page asks again every 2 minutes.
+let qualiTimer = null;
+function watchQualifying(round) {
+  clearInterval(qualiTimer);
+  qualiTimer = setInterval(async () => {
+    const box = document.getElementById('quali-box');
+    if (!box || !raceCtx || raceCtx.round !== round) { clearInterval(qualiTimer); return; }
+    if (document.hidden) return;
+    try {
+      const q = (await api(`/races/${round}/insights`)).qualifying;
+      box.innerHTML = qualiPanel(q);
+      if (!q.live) clearInterval(qualiTimer);
+    } catch { /* keep the table we have */ }
+  }, 120000);
+}
+
+function ago(ts) {
+  const s = Math.max(0, Math.round((nowTs() - ts) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  return fmtDate(ts);
 }
 
 // Past races come from the Jolpica F1 API. Its servers turn away requests from Cloudflare, so the
@@ -566,21 +591,32 @@ function driverCell(r, size = 32) {
 
 function qualiPanel(q) {
   const head = `<div class="row between"><h2>Qualifying</h2>${q.link ? `<a class="small muted" href="${esc(q.link)}" target="_blank" rel="noopener">formula1.com ↗</a>` : ''}</div>`;
+  const checked = q.live && q.checked_at ? ` <span class="muted small">· checked ${ago(q.checked_at)}</span>` : '';
   if (q.status === 'not_yet') {
     return `<div class="panel">${head}<p class="muted">Qualifying results are not public yet.${q.quali_ts ? ` Qualifying starts <b>${fmtDate(q.quali_ts)}</b>.` : ''}</p></div>`;
   }
   if (q.status === 'waiting') {
-    return `<div class="panel">${head}<p class="muted">Qualifying has taken place, but the official results are not public yet. They appear here automatically (checked every 30 minutes).</p></div>`;
+    return `<div class="panel">${head}<p class="muted">Qualifying results are not public yet.${checked} They appear here as soon as formula1.com publishes them.</p></div>`;
   }
+  const hasGrid = q.rows.some((r) => r.grid);
   const best = (r) => r.q3 || r.q2 || r.q1;
   const rows = q.rows.map((r) => {
     const cut = r.position === 10 || r.position === 15 ? ' class="cut"' : '';
     const t = (v) => `<td class="r${v && v === best(r) ? ' best' : ''}">${v ? esc(v) : '<span class="muted">-</span>'}</td>`;
-    return `<tr${cut}><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td>${t(r.q1)}${t(r.q2)}${t(r.q3)}</tr>`;
+    let grid = '';
+    if (hasGrid) {
+      const moved = r.grid && /^\d+$/.test(r.grid) && /^\d+$/.test(r.pos_text) && Number(r.grid) !== Number(r.pos_text);
+      const cls = !moved ? '' : Number(r.grid) > Number(r.pos_text) ? ' down' : ' up';
+      grid = `<td class="r grid${cls}"><b>${r.grid ? esc(r.grid) : '<span class="muted">-</span>'}</b></td>`;
+    }
+    return `<tr${cut}><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td>${t(r.q1)}${t(r.q2)}${t(r.q3)}${grid}</tr>`;
   }).join('');
-  return `<div class="panel">${head}
-    <div class="scroll"><table class="quali"><thead><tr><th>Pos</th><th>Driver</th><th class="r">Q1</th><th class="r">Q2</th><th class="r">Q3</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="muted small" style="margin-top:8px">Qualifying order, not the final starting grid: grid penalties can still move drivers.${q.source === 'jolpica' ? ' Source: Jolpica F1.' : ''}</p></div>`;
+  const note = hasGrid
+    ? 'Grid is the official starting grid, after penalties (red: starts further back than qualified).'
+    : 'This is the qualifying order. The official starting grid (after penalties) is added here when it is published.';
+  return `<div class="panel">${head}${checked ? `<div style="margin:-4px 0 8px">${checked}</div>` : ''}
+    <div class="scroll"><table class="quali"><thead><tr><th>Pos</th><th>Driver</th><th class="r">Q1</th><th class="r">Q2</th><th class="r">Q3</th>${hasGrid ? '<th class="r">Grid</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small" style="margin-top:8px">${note}${q.source === 'jolpica' ? ' Source: Jolpica F1.' : ''}</p></div>`;
 }
 
 function historyPanel(h, note) {

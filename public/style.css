@@ -195,3 +195,5 @@ table.hist td { padding-top: 8px; padding-bottom: 8px; }
   table.quali th, table.quali td, table.hist th, table.hist td { padding-left: 8px; padding-right: 8px; }
 }
 .hist-note { background: var(--amber-soft); color: #ffd978; border-radius: 8px; padding: 8px 12px; font-size: .88rem; margin: 4px 0 12px; }
+table.quali td.grid.down { color: #ff7b72; }
+table.quali td.grid.up { color: var(--green); }

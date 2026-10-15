@@ -99,32 +99,39 @@ export async function syncMeetingIds(env, budget) {
   return pairs.length;
 }
 
-// Qualifying page -> rows. An empty list means the results are not published yet
+// Results table of a formula1.com page -> rows of cell texts. Only the <table> part is scanned, so
+// the rest of the (large) page costs almost no CPU. An empty list means nothing is published yet
 // (the page then shows "No results available").
-export function parseQualifying(html) {
-  const tbody = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/);
-  if (!tbody) return [];
+function tableRows(html, minCells) {
+  const start = html.indexOf('<tbody');
+  if (start < 0) return [];
+  const body = html.slice(start, html.indexOf('</tbody>', start));
   const rows = [];
-  for (const tr of tbody[1].split(/<tr[\s>]/).slice(1)) {
-    const cells = [...tr.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
-    if (cells.length < 8) continue;
-    const t = cells.map(cellText);
-    const codeMatch = t[2].match(/([A-Z]{3})$/);
-    const code = codeMatch ? codeMatch[1] : null;
-    const name = code ? t[2].slice(0, -3).trim() : t[2];
-    const time = (s) => (/^\d+:\d{2}\.\d{3}$/.test(s) ? s : null);
-    rows.push({
-      pos_text: t[0], number: t[1] || null, code, name, team: t[3] || null,
-      q1: time(t[4]), q2: time(t[5]), q3: time(t[6]), laps: /^\d+$/.test(t[7]) ? Number(t[7]) : null,
-    });
+  for (const tr of body.split(/<tr[\s>]/).slice(1)) {
+    const cells = [...tr.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => cellText(m[1]));
+    if (cells.length >= minCells) rows.push(cells);
   }
   return rows;
 }
+const splitDriver = (cell) => {
+  const m = cell.match(/([A-Z]{3})$/); // "Max Verstappen" + "VER" (the short code is shown on phones)
+  return m ? { code: m[1], name: cell.slice(0, -3).trim() } : { code: null, name: cell };
+};
 
-async function qualifyingFromF1(env, race) {
-  const html = await getPage(env, `/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}/qualifying`);
-  return parseQualifying(html);
+export function parseQualifying(html) {
+  const time = (s) => (/^\d+:\d{2}\.\d{3}$/.test(s) ? s : null);
+  return tableRows(html, 8).map((t) => ({
+    pos_text: t[0], number: t[1] || null, ...splitDriver(t[2]), team: t[3] || null,
+    q1: time(t[4]), q2: time(t[5]), q3: time(t[6]), laps: /^\d+$/.test(t[7]) ? Number(t[7]) : null,
+  }));
 }
+
+// Starting grid page (published later, after grid penalties) -> [{ grid, number, code }].
+export function parseGrid(html) {
+  return tableRows(html, 4).map((t) => ({ grid: t[0], number: t[1] || null, code: splitDriver(t[2]).code }));
+}
+
+const f1Path = (env, race, page) => `/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}/${page}`;
 
 async function qualifyingFromJolpica(env, race) {
   const data = await getJolpica(env, `/${season(env)}/${race.round}/qualifying.json?limit=100`);
@@ -136,10 +143,32 @@ async function qualifyingFromJolpica(env, race) {
   }));
 }
 
-// Checks every race whose qualifying has taken place but is not stored yet (newest first).
-// Runs every 30 minutes, so results show up on the race page shortly after they are published.
-// Old races without results are retried for two weeks after the race, then left alone. Fresh results
-// are read once more about two hours later, so late penalties or disqualifications are picked up.
+// Reads qualifying (and, once qualifying is out, the starting grid) for one race and stores it.
+// A check that finds nothing keeps what is stored. Returns true when rows were stored.
+export async function refreshQualifying(env, race, budget = new Budget(3), { jolpicaFallback = true } = {}) {
+  let rows = [];
+  let source = null;
+  if (race.f1_meeting_id && budget.take()) {
+    try { rows = parseQualifying(await getPage(env, f1Path(env, race, 'qualifying'))); source = 'formula1.com'; } catch (e) { console.error('F1 qualifying', race.round, e.message); }
+  }
+  if (!rows.length && jolpicaFallback && budget.take()) {
+    try { rows = await qualifyingFromJolpica(env, race); source = 'jolpica'; } catch (e) { console.error('Jolpica qualifying', race.round, e.message); }
+  }
+  if (!rows.length) return false;
+  let grid = [];
+  if (race.f1_meeting_id && budget.take()) {
+    try { grid = parseGrid(await getPage(env, f1Path(env, race, 'starting-grid'))); } catch (e) { console.error('F1 grid', race.round, e.message); }
+  }
+  const gridByCode = new Map(grid.filter((g) => g.code).map((g) => [g.code, g.grid]));
+  const gridByNumber = new Map(grid.filter((g) => g.number).map((g) => [String(g.number), g.grid]));
+  for (const r of rows) r.grid = gridByCode.get(r.code) || gridByNumber.get(String(r.number)) || null;
+  await storeQualifying(env, race.round, rows, source);
+  return true;
+}
+
+// Cron (every 30 minutes): races whose qualifying has taken place and is not stored yet (newest first),
+// and the coming race until it starts, so penalties and the starting grid are picked up. Old races
+// without results are retried for two weeks after the race, then left alone.
 export async function syncQualifying(env, budget, maxRaces = 3) {
   const t = Date.now();
   try { await syncMeetingIds(env, budget); } catch (e) { console.error('Meeting ids', e.message); }
@@ -147,30 +176,37 @@ export async function syncQualifying(env, budget, maxRaces = 3) {
   const { results: due } = await env.DB.prepare(
     `SELECT round, name, f1_meeting_id, f1_slug, race_ts, quali_ts FROM races r
      WHERE COALESCE(quali_ts, race_ts - 86400000) + 3600000 < ?
-       AND (race_ts > ? OR quali_checked_at IS NULL)
-       AND (NOT EXISTS (SELECT 1 FROM qualifying q WHERE q.round = r.round)
-         -- one more look a couple of hours later, in case stewards changed the classification
-         OR (race_ts > ? AND EXISTS (SELECT 1 FROM qualifying q WHERE q.round = r.round AND q.position = 1
-               AND q.fetched_at < COALESCE(r.quali_ts, r.race_ts - 86400000) + 6 * 3600000 AND q.fetched_at < ?)))
+       AND (race_ts > ? OR (quali_checked_at IS NULL AND NOT EXISTS (SELECT 1 FROM qualifying q WHERE q.round = r.round))
+            OR (race_ts > ? AND NOT EXISTS (SELECT 1 FROM qualifying q WHERE q.round = r.round)))
      ORDER BY round DESC LIMIT ?`
-  ).bind(t, t - 14 * 86400000, t, t - 2 * 3600000, maxRaces).all();
+  ).bind(t, t, t - 14 * 86400000, maxRaces).all();
 
   let stored = 0;
   for (const race of due) {
-    let rows = [];
-    let source = null;
-    if (race.f1_meeting_id && budget.take()) {
-      try { rows = await qualifyingFromF1(env, race); source = 'formula1.com'; } catch (e) { console.error('F1 qualifying', race.round, e.message); }
-    }
-    if (!rows.length && budget.take()) {
-      try { rows = await qualifyingFromJolpica(env, race); source = 'jolpica'; } catch (e) { console.error('Jolpica qualifying', race.round, e.message); }
-    }
+    if (budget.left < 1) break;
+    if (await refreshQualifying(env, race, budget)) stored++;
     await env.DB.prepare(`UPDATE races SET quali_checked_at=? WHERE round=?`).bind(t, race.round).run();
-    if (!rows.length) continue;
-    await storeQualifying(env, race.round, rows, source); // a refresh that finds nothing keeps the stored rows
-    stored++;
   }
   return stored;
+}
+
+// Race page opened: for a race that has not started yet and whose qualifying has begun, look at
+// formula1.com right away, at most once a minute for everybody together (whoever opens the page
+// first after that minute does the check, the others get the stored copy).
+const LIVE_EVERY = 60 * 1000;
+export async function liveQualifyingCheck(env, race) {
+  const t = Date.now();
+  if (!race.f1_meeting_id || race.race_ts <= t) return false;
+  if ((race.quali_ts || race.race_ts - 86400000) > t) return false;
+  const claim = await env.DB.prepare(`UPDATE races SET quali_checked_at=? WHERE round=? AND COALESCE(quali_checked_at, 0) < ?`)
+    .bind(t, race.round, t - LIVE_EVERY).run();
+  if (!claim.meta.changes) return false; // someone checked less than a minute ago
+  try {
+    return await refreshQualifying(env, race, new Budget(2), { jolpicaFallback: false });
+  } catch (e) {
+    console.error('Live qualifying', race.round, e.message);
+    return false;
+  }
 }
 
 async function storeQualifying(env, round, rows, source) {
@@ -178,15 +214,15 @@ async function storeQualifying(env, round, rows, source) {
   const byCode = new Map(drivers.filter((d) => d.code).map((d) => [d.code, d.driver_id]));
   const byNumber = new Map(drivers.filter((d) => d.number).map((d) => [String(d.number), d.driver_id]));
   const stmt = env.DB.prepare(
-    `INSERT OR REPLACE INTO qualifying (round, position, pos_text, number, code, driver_id, name, team, q1, q2, q3, laps, source, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO qualifying (round, position, pos_text, number, code, driver_id, name, team, q1, q2, q3, laps, grid, source, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM qualifying WHERE round=?`).bind(round),
     ...rows.map((r, i) =>
       stmt.bind(round, i + 1, r.pos_text, r.number, r.code,
         r.driver_id || byCode.get(r.code) || byNumber.get(String(r.number)) || null,
-        r.name, r.team, r.q1, r.q2, r.q3, r.laps, source, Date.now())
+        r.name, r.team, r.q1, r.q2, r.q3, r.laps, r.grid || null, source, Date.now())
     ),
   ]);
 }
@@ -258,10 +294,12 @@ export async function getRaceInsights(env, round) {
     `SELECT round, name, circuit_id, race_ts, quali_ts, f1_meeting_id, f1_slug FROM races WHERE round=?`
   ).bind(round).first();
   if (!race) return null;
+  await liveQualifyingCheck(env, race);
   const t = Date.now();
+  const checked = await env.DB.prepare(`SELECT quali_checked_at FROM races WHERE round=?`).bind(round).first();
 
   const { results: rows } = await env.DB.prepare(
-    `SELECT position, pos_text, number, code, driver_id, name, team, q1, q2, q3, laps, source, fetched_at FROM qualifying WHERE round=? ORDER BY position`
+    `SELECT position, pos_text, number, code, driver_id, name, team, q1, q2, q3, laps, grid, source, fetched_at FROM qualifying WHERE round=? ORDER BY position`
   ).bind(round).all();
   const qualiTs = race.quali_ts || null;
   let status = 'published';
@@ -275,7 +313,7 @@ export async function getRaceInsights(env, round) {
   const meta = await env.DB.prepare(`SELECT podiums_at FROM track_meta WHERE circuit_id=?`).bind(race.circuit_id).first();
 
   return {
-    qualifying: { status, quali_ts: qualiTs, link, source: rows[0]?.source || null, updated_at: rows[0]?.fetched_at || null, rows: rows.map(({ source, fetched_at, ...r }) => r) },
+    qualifying: { status, quali_ts: qualiTs, link, checked_at: checked?.quali_checked_at || null, live: race.race_ts > t && (qualiTs || race.race_ts - 86400000) <= t, source: rows[0]?.source || null, updated_at: rows[0]?.fetched_at || null, rows: rows.map(({ source, fetched_at, ...r }) => r) },
     history: {
       circuit_id: race.circuit_id,
       season: season(env),
