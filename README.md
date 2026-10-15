@@ -4,14 +4,14 @@ A web app for predicting Formula 1 races with friends. Runs entirely on Cloudfla
 
 **What it does**
 
-- Accounts (email + password). Anyone can create a league and becomes its admin.
-- Invite people with a link (works with any messenger) or by email (needs the email setup below).
+- Accounts (username + password, no email). Anyone can create a league and becomes its admin. Everyone can pick a profile picture.
+- Invite people with a link (works with any messenger).
 - The **creator** of a league is always an admin and is the only one who can give or take away admin rights for other members (and delete the league).
 - **Admins** approve late predictions, create a new invite link, remove regular members and **reset a member's password**.
 - **Forgot your password?** There is no email reset. An admin opens the Members tab, clicks *Reset password* next to the person and gets a random one-time password to send them (WhatsApp etc.). The member must choose their own password at the next login. Only the creator can reset another admin; nobody can reset the creator. Everybody can change their own password by clicking their name at the top.
 - For every Grand Prix each player predicts **P1-P5, P10 and up to 3 DNFs**, picking from driver cards with photo, full name and team.
 - The race calendar (GP name, start time, track layout) is imported automatically.
-- Predictions are open until the race start time. After that a player can still send a **late prediction**: league admins get a notification (and an email if email is set up) and approve or reject it.
+- Predictions are open until the race start time. After that a player can still send a **late prediction**: league admins get a notification and approve or reject it.
 - Scores are collected automatically after each race. **+1 for every correct pick.**
 - Scoreboard: standings, a trend line over the season, and per player the list of tracks where the score **increased** and where it **stayed the same**.
 
