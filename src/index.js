@@ -1,9 +1,9 @@
 import { ensureSchema } from './schema.js';
 import {
-  HttpError, json, readBody, hashPassword, safeEqual, randomToken, randomCode, sha256Hex, parseCookies, esc,
+  HttpError, json, readBody, hashPassword, safeEqual, randomToken, randomCode, sha256Hex, parseCookies,
 } from './util.js';
-import { sendMail, emailTemplate } from './mail.js';
 import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
+import { saveAvatar, avatarResponse } from './avatars.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
 import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { syncStandings, getStandings } from './standings.js';
@@ -54,7 +54,7 @@ async function currentUser(request, env) {
   if (!sid) return null;
   return one(
     env.DB.prepare(
-      `SELECT u.id, u.name, u.email, u.must_change, u.favorite_team FROM sessions s JOIN users u ON u.id = s.user_id
+      `SELECT u.id, u.name, u.username, u.must_change, u.favorite_team, u.avatar FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.expires_at > ?`
     ).bind(await sha256Hex(sid), now())
   );
@@ -101,11 +101,17 @@ function cleanName(v, max = 40) {
   return s.slice(0, max);
 }
 
-const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+// Usernames: 3-24 letters (any alphabet), digits, spaces, dots, dashes or underscores.
+// They are unique regardless of upper/lower case and also shown to league members.
+function cleanUsername(v) {
+  const s = String(v ?? '').trim().replace(/\s+/g, ' ');
+  if (!/^[\p{L}\p{N} ._-]{3,24}$/u.test(s)) throw new HttpError(400, 'Username must be 3-24 characters: letters, numbers, spaces, dots, dashes or underscores.');
+  return s;
+}
 
 async function leagueAdmins(env, leagueId) {
   const { results } = await env.DB.prepare(
-    `SELECT u.id, u.name, u.email FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? AND m.role='admin'`
+    `SELECT u.id, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? AND m.role='admin'`
   ).bind(leagueId).all();
   return results;
 }
@@ -131,28 +137,29 @@ async function handleApi(request, env, ctx, url) {
   // ---- auth
   if (method === 'POST' && path === '/api/register') {
     const b = await readBody(request);
-    const name = cleanName(b.name);
-    const email = String(b.email || '').trim().toLowerCase();
+    const name = cleanUsername(b.username);
+    const username = name.toLowerCase();
     const password = String(b.password || '');
-    if (!validEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
     const team = TEAM_SLUGS.has(String(b.team || '')) ? String(b.team) : null;
-    if (await one(env.DB.prepare(`SELECT id FROM users WHERE email=?`).bind(email)))
-      throw new HttpError(409, 'An account with this email already exists.');
+    if (await one(env.DB.prepare(`SELECT id FROM users WHERE username=?`).bind(username)))
+      throw new HttpError(409, 'This username is already taken.');
     const { hash, salt } = await hashPassword(password, undefined, env.PBKDF2_ITERATIONS);
-    const r = await env.DB.prepare(`INSERT INTO users (email, name, pass_hash, salt, created_at, favorite_team) VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(email, name, hash, salt, now(), team).run();
+    // The email column is required by the original table; accounts without email get a unique placeholder.
+    const r = await env.DB.prepare(`INSERT INTO users (email, name, username, pass_hash, salt, created_at, favorite_team) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(`user:${username}`, name, username, hash, salt, now(), team).run();
     const id = r.meta.last_row_id;
-    return json({ user: { id, name, email, favorite_team: team } }, 200, { 'set-cookie': await startSession(env, request, id) });
+    return json({ user: { id, name, username, favorite_team: team, avatar: null } }, 200, { 'set-cookie': await startSession(env, request, id) });
   }
 
   if (method === 'POST' && path === '/api/login') {
     const b = await readBody(request);
-    const email = String(b.email || '').trim().toLowerCase();
-    const u = await one(env.DB.prepare(`SELECT * FROM users WHERE email=?`).bind(email));
+    const login = String(b.username || '').trim().toLowerCase();
+    // older accounts can still log in with the email address they registered with
+    const u = await one(env.DB.prepare(`SELECT * FROM users WHERE username=? OR (email=? AND email LIKE '%@%')`).bind(login, login));
     const attempt = await hashPassword(String(b.password || ''), u?.salt, env.PBKDF2_ITERATIONS);
-    if (!u || !safeEqual(attempt.hash, u.pass_hash)) throw new HttpError(401, 'Wrong email or password.');
-    return json({ user: { id: u.id, name: u.name, email: u.email, must_change: u.must_change, favorite_team: u.favorite_team || null } }, 200, {
+    if (!u || !safeEqual(attempt.hash, u.pass_hash)) throw new HttpError(401, 'Wrong username or password.');
+    return json({ user: { id: u.id, name: u.name, username: u.username, must_change: u.must_change, favorite_team: u.favorite_team || null, avatar: u.avatar || null } }, 200, {
       'set-cookie': await startSession(env, request, u.id),
     });
   }
@@ -167,7 +174,7 @@ async function handleApi(request, env, ctx, url) {
 
   if (method === 'GET' && path === '/api/me') {
     const user = await currentUser(request, env);
-    return json({ user, app_name: env.APP_NAME || 'F1 Predictions', email_enabled: !!(env.RESEND_API_KEY && env.MAIL_FROM) });
+    return json({ user, app_name: env.APP_NAME || 'F1 Predictions' });
   }
 
   // ---- invite preview (works before login)
@@ -275,7 +282,7 @@ async function handleApi(request, env, ctx, url) {
     if (method === 'GET') {
       const league = await one(env.DB.prepare(`SELECT id, name, invite_code, owner_id FROM leagues WHERE id=?`).bind(lid));
       const { results: members } = await env.DB.prepare(
-        `SELECT u.id, u.name, m.role, m.joined_at FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? ORDER BY m.joined_at`
+        `SELECT u.id, u.name, u.avatar, m.role, m.joined_at FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? ORDER BY m.joined_at`
       ).bind(lid).all();
       const isAdmin = me.role === 'admin';
       const pending = isAdmin
@@ -304,21 +311,6 @@ async function handleApi(request, env, ctx, url) {
     const code = randomCode(10);
     await env.DB.prepare(`UPDATE leagues SET invite_code=? WHERE id=?`).bind(code, lid).run();
     return json({ invite_code: code });
-  }
-
-  if ((m = path.match(/^\/api\/leagues\/(\d+)\/invite-email$/)) && method === 'POST') {
-    const lid = Number(m[1]);
-    await requireAdmin(env, lid, user.id);
-    if (!(env.RESEND_API_KEY && env.MAIL_FROM)) throw new HttpError(400, 'Email is not set up yet. Share the invite link instead.');
-    const b = await readBody(request);
-    const email = String(b.email || '').trim().toLowerCase();
-    if (!validEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
-    const l = await one(env.DB.prepare(`SELECT name, invite_code FROM leagues WHERE id=?`).bind(lid));
-    const link = `${url.origin}/join/${l.invite_code}`;
-    const ok = await sendMail(env, email, `${user.name} invited you to "${l.name}"`,
-      emailTemplate(env, `Join "${l.name}"`, `<p>${esc(user.name)} invited you to play F1 predictions together.</p>`, link, 'Join the league'));
-    if (!ok) throw new HttpError(502, 'The email could not be sent.');
-    return json({ ok: true });
   }
 
   // ---- members: the league creator (owner) is always an admin and is the only one who
@@ -378,6 +370,13 @@ async function handleApi(request, env, ctx, url) {
     return json({ temp_password: temp });
   }
 
+  // ---- profile picture: a preset ({ avatar: 'helmet:<team>' | 'team:<team>' | 'driver:<driver id>' | '' })
+  // or an uploaded picture ({ image: 'data:image/jpeg;base64,...' }, made small in the browser)
+  if (method === 'POST' && path === '/api/account/avatar') {
+    return json({ ok: true, avatar: await saveAvatar(env, user.id, await readBody(request)) });
+  }
+  if ((m = path.match(/^\/api\/avatars\/(\d+)$/)) && method === 'GET') return avatarResponse(env, Number(m[1]));
+
   // ---- favorite team ('' clears it)
   if (method === 'POST' && path === '/api/account/team') {
     const b = await readBody(request);
@@ -426,7 +425,7 @@ async function handleApi(request, env, ctx, url) {
     const lid = Number(m[1]);
     await requireAdmin(env, lid, user.id);
     const { results } = await env.DB.prepare(
-      `SELECT p.id, p.round, p.p1, p.p2, p.p3, p.p4, p.p5, p.p10, p.dnfs, p.submitted_at, u.name AS user_name, r.name AS race_name, r.race_ts
+      `SELECT p.id, p.user_id, p.round, p.p1, p.p2, p.p3, p.p4, p.p5, p.p10, p.dnfs, p.submitted_at, u.name AS user_name, u.avatar AS user_avatar, r.name AS race_name, r.race_ts
        FROM predictions p JOIN users u ON u.id = p.user_id JOIN races r ON r.round = p.round
        WHERE p.league_id=? AND p.status='late_pending' ORDER BY p.submitted_at`
     ).bind(lid).all();
@@ -439,8 +438,8 @@ async function handleApi(request, env, ctx, url) {
     const b = await readBody(request);
     if (!['approve', 'reject'].includes(b.action)) throw new HttpError(400, 'Invalid action.');
     const p = await one(env.DB.prepare(
-      `SELECT p.id, p.user_id, p.round, r.name AS race_name, l.name AS league_name, u.email
-       FROM predictions p JOIN races r ON r.round=p.round JOIN leagues l ON l.id=p.league_id JOIN users u ON u.id=p.user_id
+      `SELECT p.id, p.user_id, p.round, r.name AS race_name, l.name AS league_name
+       FROM predictions p JOIN races r ON r.round=p.round JOIN leagues l ON l.id=p.league_id
        WHERE p.id=? AND p.league_id=? AND p.status='late_pending'`
     ).bind(Number(m[2]), lid));
     if (!p) throw new HttpError(404, 'This request was already handled.');
@@ -450,8 +449,6 @@ async function handleApi(request, env, ctx, url) {
       ? `Your late prediction for the ${p.race_name} in "${p.league_name}" was approved.`
       : `Your late prediction for the ${p.race_name} in "${p.league_name}" was not accepted.`;
     await notify(env, p.user_id, text, `/league/${lid}/race/${p.round}`);
-    ctx.waitUntil(sendMail(env, p.email, approved ? 'Late prediction approved' : 'Late prediction not accepted',
-      emailTemplate(env, approved ? 'Approved' : 'Not accepted', `<p>${esc(text)}</p>`, `${url.origin}/league/${lid}/race/${p.round}`, 'Open the race')));
     return json({ ok: true });
   }
 
@@ -503,7 +500,7 @@ async function getRacePredictions(env, lid, round, user) {
   const lookup = await resultLookup(env, round);
   const locked = now() >= race.race_ts;
   const { results: rows } = await env.DB.prepare(
-    `SELECT p.*, u.name AS user_name FROM predictions p JOIN users u ON u.id = p.user_id WHERE p.league_id=? AND p.round=?`
+    `SELECT p.*, u.name AS user_name, u.avatar AS user_avatar FROM predictions p JOIN users u ON u.id = p.user_id WHERE p.league_id=? AND p.round=?`
   ).bind(lid, round).all();
 
   const mine = rows.find((p) => p.user_id === user.id);
@@ -558,8 +555,6 @@ async function savePrediction(env, ctx, url, lid, round, user, b) {
       const text = `${user.name} submitted a late prediction for the ${race.name} in "${l.name}". Approval needed.`;
       for (const a of others) {
         await notify(env, a.id, text, `/league/${lid}/approvals`);
-        ctx.waitUntil(sendMail(env, a.email, 'Late prediction needs approval',
-          emailTemplate(env, 'Approval needed', `<p>${esc(text)}</p>`, `${url.origin}/league/${lid}/approvals`, 'Review it')));
       }
     }
   }
@@ -580,7 +575,7 @@ async function getScoreboard(env, lid) {
      WHERE EXISTS (SELECT 1 FROM results x WHERE x.round = r.round) ORDER BY r.round`
   ).all();
   const { results: members } = await env.DB.prepare(
-    `SELECT u.id, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? ORDER BY u.name`
+    `SELECT u.id, u.name, u.avatar FROM members m JOIN users u ON u.id = m.user_id WHERE m.league_id=? ORDER BY u.name`
   ).bind(lid).all();
   const { results: preds } = await env.DB.prepare(
     `SELECT * FROM predictions WHERE league_id=? AND status IN ('ok','late_approved')`
@@ -597,7 +592,7 @@ async function getScoreboard(env, lid) {
       total += pts;
       return { round: r.round, pts, total, submitted: !!p, change: pts > 0 ? 'up' : 'same' };
     });
-    return { id: mem.id, name: mem.name, total, per_race };
+    return { id: mem.id, name: mem.name, avatar: mem.avatar, total, per_race };
   });
   board.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   return { races, board };

@@ -11,7 +11,11 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - After frontend changes users need a hard refresh (browser cache).
 
 ## Rules agreed with the owner
-- Accounts + leagues, invite by link only (no email service). Creator is always admin and the only one who grants/revokes admin.
+- Accounts are username + password only (no email at all; mail.js removed). Old accounts: username = lower(old name), email login still accepted.
+  New users get placeholder email `user:<username>` (column is NOT NULL UNIQUE).
+- Profile pictures (`src/avatars.js`, users.avatar): helmet:<team> (SVG drawn in app.js), team:<team>, url:<driver photo>,
+  upload:<ts> (256px JPEG made in browser, base64 in avatars table, served by /api/avatars/:id?v=ts). userAvatar() in app.js renders all.
+- Leagues, invite by link only. Creator is always admin and the only one who grants/revokes admin.
 - Picks: P1-P5, P10, up to 3 DNFs. +1 per correct pick. Voting closes at race start.
 - Late predictions (also for finished races) are allowed and go to the league admins' Approvals tab; they count only once approved.
 - A driver can be used once per prediction; choosing a used driver in the picker moves them (greyed out but clickable).

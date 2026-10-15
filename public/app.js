@@ -2,7 +2,7 @@
 'use strict';
 
 const app = document.getElementById('app');
-const state = { me: null, appName: 'F1 Predictions', emailEnabled: false, drivers: null, races: null, offset: 0, notes: null };
+const state = { me: null, appName: 'F1 Predictions', drivers: null, races: null, offset: 0, notes: null };
 const DNF_SLOTS = 3;
 const COLORS = ['#e10600', '#3b9eff', '#2fbf71', '#f0b429', '#b07cff', '#ff8a3d', '#22d3c5', '#f472b6', '#a3e635', '#94a3b8'];
 
@@ -58,6 +58,30 @@ function avatar(d, size = 44) {
   const img = d.photo_url ? `<img src="${esc(d.photo_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
   return `<span class="av" style="--s:${size}px"><span class="ini">${esc(d.code || d.number || '')}</span>${img}</span>`;
 }
+// ----------------------------------------------------------- user pictures
+// u: { id, name, avatar } where avatar is 'helmet:<team>', 'team:<team>', 'url:<image>', 'upload:<time>' or empty.
+function helmetSvg(color) {
+  return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="#1b1e25"/>
+    <path d="M9 40c0-15 12-27 28-27 11 0 19 8 19 19v9c0 5-4 9-9 9H19c-6 0-10-4-10-10z" fill="${color}"/>
+    <path d="M9 41h40" stroke="#fff" stroke-width="3" opacity=".85"/>
+    <path d="M30 25h26v11H35c-3 0-5-2-5-5z" fill="#0b0c10"/><path d="M33 27h21v3H34z" fill="#fff" opacity=".18"/>
+    <path d="M19 50h28" stroke="#000" stroke-width="2" opacity=".25"/></svg>`;
+}
+const AV_COLORS = ['#e10600', '#3b9eff', '#2fbf71', '#f0b429', '#b07cff', '#ff8a3d', '#22d3c5', '#f472b6'];
+function userAvatar(u, size = 32) {
+  const a = (u && u.avatar) || '';
+  const box = (inner, style = '') => `<span class="uav" style="--s:${size}px;${style}">${inner}</span>`;
+  const img = (src) => `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
+  if (a.startsWith('upload:')) return box(img(`/api/avatars/${u.id}?v=${encodeURIComponent(a.slice(7))}`));
+  if (a.startsWith('url:')) return box(img(a.slice(4)), 'background:#2b303a');
+  const team = (a.startsWith('helmet:') || a.startsWith('team:')) && teamBySlug(a.slice(a.indexOf(':') + 1));
+  if (team && a.startsWith('helmet:')) return box(helmetSvg(team.color));
+  if (team) return box(`<img class="logo" src="${esc(team.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer">`, `background:${esc(team.color)}`);
+  const name = String((u && u.name) || '?');
+  const color = AV_COLORS[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % AV_COLORS.length];
+  return box(`<span class="ini">${esc(name.slice(0, 1).toUpperCase())}</span>`, `background:${color}`);
+}
+
 const driverById = (id) => (state.driverMap || {})[id];
 async function loadDrivers() {
   const { drivers } = await api('/drivers');
@@ -114,7 +138,7 @@ function shell(inner) {
       <span class="spacer"></span>
       ${u ? `<div class="bell"><button data-act="bell" aria-label="Notifications">🔔<span id="badge"></span></button>
         <div id="notes" class="notes" hidden></div></div>
-        <a class="muted small" href="/account" data-link title="Change password">${esc(u.name)}</a>
+        <a class="me-link" href="/account" data-link title="Your account: picture, team, password">${userAvatar(u, 30)}<span class="muted small">${esc(u.name)}</span></a>
         <button class="ghost small" data-act="logout">Log out</button>` : ''}
     </header>
     ${teamSide() ? `<div class="layout"><main>${inner}</main>${teamSide()}</div>` : inner}
@@ -141,7 +165,6 @@ async function render() {
       const me = await api('/me');
       state.me = me.user;
       state.appName = me.app_name;
-      state.emailEnabled = me.email_enabled;
       state.loaded = true;
       document.title = state.appName;
     }
@@ -169,11 +192,12 @@ function authForm(afterAuth) {
     <div class="seg"><button data-act="authmode" data-mode="login" class="${authMode === 'login' ? 'on' : ''}">Log in</button>
     <button data-act="authmode" data-mode="register" class="${authMode === 'register' ? 'on' : ''}">Create account</button></div>
     <form data-form="auth">
-      ${authMode === 'register' ? `<label for="a-name">Your name (shown to league members)</label><input id="a-name" name="name" required maxlength="40" autocomplete="name">` : ''}
-      ${authMode === 'register' ? `<label for="team-sel">Favorite team (optional)</label>${teamSelect('')}` : ''}
-      <label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email">
+      <label for="a-user">Username${authMode === 'register' ? ' (shown to league members)' : ''}</label>
+      <input id="a-user" name="username" required ${authMode === 'register' ? 'minlength="3" maxlength="24"' : ''} autocomplete="username" autocapitalize="off" spellcheck="false">
+      ${authMode === 'login' ? '<p class="muted small" style="margin:4px 0 0">Made your account with an email address? Your username is the name you chose then, or log in with that email.</p>' : ''}
       <label for="a-pass">Password ${authMode === 'register' ? '(min. 8 characters)' : ''}</label>
       <input id="a-pass" name="password" type="password" required minlength="${authMode === 'register' ? 8 : 1}" autocomplete="${authMode === 'register' ? 'new-password' : 'current-password'}">
+      ${authMode === 'register' ? `<label for="team-sel">Favorite team (optional)</label>${teamSelect('')}` : ''}
       <p><button class="primary" style="width:100%;justify-content:center">${authMode === 'register' ? 'Create account' : 'Log in'}</button></p>
     </form>
   </div>`;
@@ -185,7 +209,8 @@ function authView() {
 // ---------------------------------------------------------------- account
 function accountView() {
   const forced = !!state.me.must_change;
-  app.innerHTML = shell(`<div class="auth">${forced ? '' : `<div class="panel"><h2>Favorite team</h2>
+  if (!forced && !state.drivers) loadDrivers().then(() => { const g = document.getElementById('av-drivers'); if (g) g.innerHTML = avatarChoices('driver'); }).catch(() => {});
+  app.innerHTML = shell(`<div class="auth">${forced ? '' : avatarPanel()}${forced ? '' : `<div class="panel"><h2>Favorite team</h2>
     <p class="muted small">Your team is shown at the side of every page with its drivers, car and race photos.</p>
     <form data-form="team"><label for="team-sel">Team</label>${teamSelect(state.me.favorite_team)}
       <p><button class="primary">Save team</button></p></form></div>`}<div class="panel">
@@ -198,6 +223,46 @@ function accountView() {
       <p class="row"><button class="primary">Save password</button>${forced ? '' : '<a class="btn" href="/" data-link>Cancel</a>'}</p>
     </form></div></div>`);
 }
+
+function avatarChoices(kind) {
+  const on = (v) => (state.me.avatar === v ? ' on' : '');
+  const btn = (value, inner, title) => `<button class="avopt${on(value)}" data-act="set-avatar" data-avatar="${esc(value)}" title="${esc(title)}">${inner}</button>`;
+  const teams = state.teams || [];
+  if (kind === 'helmet') return teams.map((t) => btn(`helmet:${t.slug}`, userAvatar({ avatar: `helmet:${t.slug}` }, 52), `${t.name} helmet`)).join('');
+  if (kind === 'team') return teams.map((t) => btn(`team:${t.slug}`, userAvatar({ avatar: `team:${t.slug}` }, 52), t.name)).join('');
+  const drivers = (state.drivers || []).filter((d) => d.photo_url);
+  if (!drivers.length) return '<p class="muted small">Loading drivers…</p>';
+  return drivers.map((d) => btn(`driver:${d.driver_id}`, `<span class="uav" style="--s:52px;background:#2b303a"><img src="${esc(d.photo_url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>`, d.name)).join('');
+}
+
+function avatarPanel() {
+  return `<div class="panel"><h2>Your picture</h2>
+    <div class="row" style="gap:16px;margin-bottom:6px">${userAvatar(state.me, 80)}
+      <div><p class="muted small" style="margin:0 0 8px">League members see it next to your name.</p>
+        <div class="row"><label class="btn" style="margin:0;color:var(--text)">Upload a photo<input type="file" accept="image/*" data-avatar-file hidden></label>
+        ${state.me.avatar ? '<button class="ghost small" data-act="set-avatar" data-avatar="">Remove</button>' : ''}</div></div></div>
+    <h3 class="avhead">Helmets</h3><div class="avgrid">${avatarChoices('helmet')}</div>
+    <h3 class="avhead">Teams</h3><div class="avgrid">${avatarChoices('team')}</div>
+    <h3 class="avhead">Drivers</h3><div class="avgrid" id="av-drivers">${avatarChoices('driver')}</div></div>`;
+}
+
+// Crops the chosen photo to a square around its centre and shrinks it to 256x256 before upload.
+async function uploadAvatar(file) {
+  if (!file || !file.type.startsWith('image/')) { toast('Please choose a picture', true); return; }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+    const image = canvas.toDataURL('image/jpeg', 0.85);
+    const r = await api('/account/avatar', { method: 'POST', body: { image } });
+    state.me.avatar = r.avatar;
+    toast('Picture saved');
+    accountView();
+  } catch (e) { fail(e.status ? e : new Error('This picture could not be read. Try a JPG or PNG.')); }
+}
+document.addEventListener('change', (e) => { if (e.target.matches('[data-avatar-file]')) uploadAvatar(e.target.files[0]); });
 
 // ------------------------------------------------------------------- join
 async function joinView(code) {
@@ -309,10 +374,9 @@ function membersTab(info) {
       <p class="muted small">Send this link by WhatsApp, Messenger, anything. Whoever opens it can create an account and join this league.</p>
       <div class="copybox"><input readonly value="${esc(link)}" id="invite-link"><button data-act="copy">Copy</button></div>
       <p class="row" style="margin-top:12px"><button class="ghost small" data-act="regen" data-id="${info.league.id}">Create a new link (old one stops working)</button></p>
-      ${state.emailEnabled ? `<form data-form="invite-email" data-id="${info.league.id}" class="row" style="margin-top:8px"><input name="email" type="email" placeholder="friend@example.com" required><button>Send invite by email</button></form>` : ''}
     </div>` : ''}
     <div class="panel flush"><div class="scroll"><table><thead><tr><th>Member</th><th>Role</th><th class="r"></th></tr></thead><tbody>
-    ${info.members.map((m) => `<tr><td>${esc(m.name)}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</td>
+    ${info.members.map((m) => `<tr><td><span class="who-row">${userAvatar(m, 32)}<span>${esc(m.name)}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</span></span></td>
       <td><span class="chip ${m.role === 'admin' ? 'amber' : ''}">${m.id === ownerId ? 'creator · admin' : m.role}</span></td>
       <td class="r">${controls(m)}</td></tr>`).join('')}
     </tbody></table></div></div>
@@ -329,7 +393,7 @@ async function approvalsTab(id) {
   const nm = (x) => (map[x] ? map[x].code || map[x].name : '?');
   if (!pending.length) return `<div class="panel muted">No late predictions waiting for approval.</div>`;
   return pending.map((p) => `<div class="panel">
-    <div class="row between"><div><h3>${esc(p.user_name)} · ${esc(p.race_name)}</h3>
+    <div class="row between"><div><h3 class="who-row">${userAvatar({ id: p.user_id, name: p.user_name, avatar: p.user_avatar }, 32)}<span>${esc(p.user_name)} · ${esc(p.race_name)}</span></h3>
       <div class="muted small">Submitted ${fmtDate(p.submitted_at)} · race started ${fmtDate(p.race_ts)}</div></div>
       <div class="row"><button class="primary" data-act="decide" data-id="${id}" data-pid="${p.id}" data-action="approve">Approve</button>
       <button class="danger" data-act="decide" data-id="${id}" data-pid="${p.id}" data-action="reject">Reject</button></div></div>
@@ -345,7 +409,7 @@ async function scoreboardTab(id) {
   const color = (i) => COLORS[i % COLORS.length];
   const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th><th class="r">Last race</th></tr></thead><tbody>
     ${board.map((b, i) => { const last = b.per_race[b.per_race.length - 1]; return `<tr class="${i === 0 ? 'lead' : ''}">
-      <td class="num">${i + 1}</td><td><span class="dot" style="background:${color(i)}"></span>${esc(b.name)}</td>
+      <td class="num">${i + 1}</td><td><span class="who-row"><span class="dot" style="background:${color(i)}"></span>${userAvatar(b, 30)}<span>${esc(b.name)}</span></span></td>
       <td class="r num"><b>${b.total}</b></td><td class="r num ${last.pts ? 'up' : 'same'}">${last.pts ? '+' + last.pts : '='}</td></tr>`; }).join('')}
     </tbody></table></div></div>`;
   return standings + trendChart(races, board, color) + remarks(races, board, color) + perRaceTable(races, board);
@@ -784,7 +848,7 @@ function resultsPanel(results) {
 
 function othersPanel(others, missing, scored) {
   const nm = (id) => { const d = driverById(id); return d ? d.code || d.name : '?'; };
-  const card = (p) => `<div class="panel" style="margin-bottom:10px"><div class="row between"><b>${esc(p.user_name)}</b>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</div>
+  const card = (p) => `<div class="panel" style="margin-bottom:10px"><div class="row between"><span class="who-row">${userAvatar({ id: p.user_id, name: p.user_name, avatar: p.user_avatar }, 34)}<b>${esc(p.user_name)}</b></span>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</div>
     <div class="picks" style="margin-top:8px">${SLOTS.map((k) => `<span class="pk ${p.detail && p.detail[k] ? 'ok' : ''}"><b>${k.toUpperCase()}</b>${esc(nm(p[k]))}</span>`).join('')}
     ${p.dnfs.map((d, i) => `<span class="pk ${p.detail && p.detail.dnfs[i] ? 'ok' : ''}"><b>DNF</b>${esc(nm(d))}</span>`).join('')}</div></div>`;
   return `<h2>Everyone's predictions</h2>${others.map(card).join('') || '<p class="muted">Nobody else has a valid prediction for this race.</p>'}
@@ -844,6 +908,14 @@ const actions = {
     try { await api(`/leagues/${el.dataset.id}/pending/${el.dataset.pid}`, { method: 'POST', body: { action: el.dataset.action } }); toast(el.dataset.action === 'approve' ? 'Approved' : 'Rejected'); render(); } catch (e) { fail(e); }
   },
   pick(el) { if (raceCtx?.editable) openPicker(el.dataset.slot); },
+  async 'set-avatar'(el) {
+    try {
+      const r = await api('/account/avatar', { method: 'POST', body: { avatar: el.dataset.avatar } });
+      state.me.avatar = r.avatar;
+      toast(r.avatar ? 'Picture saved' : 'Picture removed');
+      accountView();
+    } catch (e) { fail(e); }
+  },
   'close-modal'() { document.querySelector('.modal')?.remove(); },
   choose(el) {
     const slot = el.dataset.slot, id = el.dataset.id || null;
@@ -902,9 +974,6 @@ const forms = {
   },
   async newleague(f) {
     try { const r = await api('/leagues', { method: 'POST', body: Object.fromEntries(new FormData(f)) }); go(`/league/${r.id}/members`); } catch (e) { fail(e); }
-  },
-  async 'invite-email'(f) {
-    try { await api(`/leagues/${f.dataset.id}/invite-email`, { method: 'POST', body: Object.fromEntries(new FormData(f)) }); toast('Invite sent'); f.reset(); } catch (e) { fail(e); }
   },
 };
 document.addEventListener('submit', (e) => {

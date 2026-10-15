@@ -28,9 +28,6 @@
 
   "vars": {
     "SEASON": "2026",
-    "APP_NAME": "F1 Vietiniai Predictions",
-    // Sender address for emails, e.g. "F1 Predictions <noreply@yourdomain.com>".
-    // Leave empty to disable emails (invite links still work).
-    "MAIL_FROM": ""
+    "APP_NAME": "F1 Vietiniai Predictions"
   }
 }

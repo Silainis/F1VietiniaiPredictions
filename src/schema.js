@@ -123,6 +123,13 @@ export const SCHEMA = [
     fetched_at INTEGER,
     PRIMARY KEY (season, kind, position)
   )`,
+  // Uploaded profile pictures (small JPEG/WebP made in the browser, stored as base64).
+  `CREATE TABLE IF NOT EXISTS avatars (
+    user_id INTEGER PRIMARY KEY,
+    mime TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
   // What the last scheduled syncs did (kept short), to see from the database whether imports work.
   `CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +156,12 @@ export function ensureSchema(env) {
         `ALTER TABLE races ADD COLUMN f1_slug TEXT`,
         `ALTER TABLE races ADD COLUMN quali_checked_at INTEGER`,
         `ALTER TABLE qualifying ADD COLUMN grid TEXT`,
+        `ALTER TABLE users ADD COLUMN username TEXT`,
+        `ALTER TABLE users ADD COLUMN avatar TEXT`,
+        // accounts made with an email before usernames existed: their name becomes the username
+        // (an id is added if two names are the same); they can still log in with their email too
+        `UPDATE users SET username = lower(name) || CASE WHEN EXISTS (SELECT 1 FROM users u2 WHERE lower(u2.name) = lower(users.name) AND u2.id < users.id) THEN id ELSE '' END WHERE username IS NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
       ]))
       .catch((e) => {
       ready = null;

@@ -75,21 +75,13 @@ This replaces the placeholder page on `https://f1-vietiniai-predictions.f1vietin
 2. On the Members tab copy the invite link and send it to your friends.
 3. Open `https://f1-vietiniai-predictions.f1vietiniai.workers.dev/api/admin/sync?key=YOUR_ADMIN_KEY` once if you want to force an immediate data refresh (it also refreshes by itself every 30 minutes).
 
-## 4. Email (optional)
+## 4. Accounts
 
-Without email everything works: invite links are copied and shared by you, and admins see approval requests inside the app (bell icon).
+Players sign up with a **username and password** only; the app never sends email. Invite links are shared by you (WhatsApp, Messenger, …), admins see approval requests in the app (bell icon), and a forgotten password is reset by a league admin (Members tab), who passes the temporary password on.
 
-To send real emails (invites by email, late-prediction notices to admins, approval results to players):
+Accounts made before usernames existed got their old display name as username (lower case); they can also still log in with their old email address.
 
-1. Create a free account at [resend.com](https://resend.com) and an API key.
-2. To send to **any** address (not only your own), Resend requires you to verify a domain you own. A `workers.dev` address cannot be verified, so you need a custom domain (a few euros per year; Cloudflare sells them at cost). Add the domain in Resend and create the DNS records it shows.
-3. Store the key and set the sender:
-
-```bash
-npx wrangler secret put RESEND_API_KEY
-```
-
-Then in `wrangler.jsonc` set `"MAIL_FROM": "F1 Predictions <noreply@yourdomain.com>"` and deploy again.
+Everybody can choose a **picture** on the Account page: a helmet in a team's colours, a team logo, a driver photo, or an own photo (cropped to a square and shrunk to 256×256 in the browser, stored in the database).
 
 ## 5. Rules and choices you may want to change
 
@@ -157,7 +149,7 @@ src/standings.js   Championship standings (formula1.com) for sorting the driver 
 src/f1photos.js    Driver photo addresses from formula1.com/en/drivers
 src/f1tracks.js    Circuit map addresses from the formula1.com race pages
 src/scoring.js     Scoring rules
-src/mail.js        Email sending (Resend)
+src/avatars.js     Profile pictures (presets and uploads)
 src/schema.js      Database tables (created automatically)
 release.mjs        One-click release script (run by release.bat or npm run release)
 public/            The web pages (index.html, style.css, app.js)
