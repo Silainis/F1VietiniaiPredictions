@@ -136,7 +136,7 @@ function shell(inner) {
     <header class="topbar">
       <a class="brand" href="/" data-link><img class="f1logo" src="/f1-logo.png" alt="F1" onerror="this.outerHTML='<span class=&quot;logo&quot;>F1</span>'"> ${esc(state.appName)}</a>
       <span class="spacer"></span>
-      ${u ? `<div class="bell"><button data-act="bell" aria-label="Notifications">🔔<span id="badge"></span></button>
+      ${u ? `<a class="wpc-link" href="/wpc" data-link title="World Prediction Champion">${cupSvg('gold', 18)}<span>WPC</span></a><div class="bell"><button data-act="bell" aria-label="Notifications">🔔<span id="badge"></span></button>
         <div id="notes" class="notes" hidden></div></div>
         <a class="me-link" href="/account" data-link title="Your account: picture, team, password">${userAvatar(u, 30)}<span class="muted small">${esc(u.name)}</span></a>
         <button class="ghost small" data-act="logout">Log out</button>` : ''}
@@ -176,6 +176,9 @@ async function render() {
     if (state.me.must_change || path === '/account') return accountView();
     if (path === '/') return await homeView();
     if ((m = path.match(/^\/league\/(\d+)\/race\/(\d+)$/))) return await raceView(Number(m[1]), Number(m[2]));
+    if (path === '/wpc' || (m = path.match(/^\/wpc\/(\d{4})$/))) return await wpcView(m ? Number(m[1]) : null);
+    if ((m = path.match(/^\/player\/(\d+)$/))) return await playerView(`/players/${m[1]}`);
+    if ((m = path.match(/^\/player\/h\/(.+)$/))) return await playerView(`/players/h/${m[1]}`);
     if ((m = path.match(/^\/league\/(\d+)(?:\/(races|scoreboard|members|approvals))?$/))) return await leagueView(Number(m[1]), m[2] || 'races');
     app.innerHTML = shell(`<div class="panel"><h2>Page not found</h2><a href="/" data-link>Back to home</a></div>`);
   } catch (e) {
@@ -376,7 +379,7 @@ function membersTab(info) {
       <p class="row" style="margin-top:12px"><button class="ghost small" data-act="regen" data-id="${info.league.id}">Create a new link (old one stops working)</button></p>
     </div>` : ''}
     <div class="panel flush"><div class="scroll"><table><thead><tr><th>Member</th><th>Role</th><th class="r"></th></tr></thead><tbody>
-    ${info.members.map((m) => `<tr><td><span class="who-row">${userAvatar(m, 32)}<span>${esc(m.name)}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</span></span></td>
+    ${info.members.map((m) => `<tr><td><a class="who-row plain" href="/player/${m.id}" data-link>${userAvatar(m, 32)}<span>${esc(m.name)}${m.id === me ? ' <span class="muted">(you)</span>' : ''}</span></a></td>
       <td><span class="chip ${m.role === 'admin' ? 'amber' : ''}">${m.id === ownerId ? 'creator · admin' : m.role}</span></td>
       <td class="r">${controls(m)}</td></tr>`).join('')}
     </tbody></table></div></div>
@@ -409,7 +412,7 @@ async function scoreboardTab(id) {
   const color = (i) => COLORS[i % COLORS.length];
   const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th><th class="r">Last race</th></tr></thead><tbody>
     ${board.map((b, i) => { const last = b.per_race[b.per_race.length - 1]; return `<tr class="${i === 0 ? 'lead' : ''}">
-      <td class="num">${i + 1}</td><td><span class="who-row"><span class="dot" style="background:${color(i)}"></span>${userAvatar(b, 30)}<span>${esc(b.name)}</span></span></td>
+      <td class="num">${i + 1}</td><td><span class="who-row"><span class="dot" style="background:${color(i)}"></span><a class="who-row plain" href="/player/${b.id}" data-link>${userAvatar(b, 30)}<span>${esc(b.name)}</span></a></span></td>
       <td class="r num"><b>${b.total}</b></td><td class="r num ${last.pts ? 'up' : 'same'}">${last.pts ? '+' + last.pts : '='}</td></tr>`; }).join('')}
     </tbody></table></div></div>`;
   return standings + trendChart(races, board, color) + remarks(races, board, color) + perRaceTable(races, board);
@@ -848,11 +851,115 @@ function resultsPanel(results) {
 
 function othersPanel(others, missing, scored) {
   const nm = (id) => { const d = driverById(id); return d ? d.code || d.name : '?'; };
-  const card = (p) => `<div class="panel" style="margin-bottom:10px"><div class="row between"><span class="who-row">${userAvatar({ id: p.user_id, name: p.user_name, avatar: p.user_avatar }, 34)}<b>${esc(p.user_name)}</b></span>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</div>
+  const card = (p) => `<div class="panel" style="margin-bottom:10px"><div class="row between"><a class="who-row plain" href="/player/${p.user_id}" data-link>${userAvatar({ id: p.user_id, name: p.user_name, avatar: p.user_avatar }, 34)}<b>${esc(p.user_name)}</b></a>${scored ? `<span class="chip green">${p.points} pt${p.points === 1 ? '' : 's'}</span>` : ''}</div>
     <div class="picks" style="margin-top:8px">${SLOTS.map((k) => `<span class="pk ${p.detail && p.detail[k] ? 'ok' : ''}"><b>${k.toUpperCase()}</b>${esc(nm(p[k]))}</span>`).join('')}
     ${p.dnfs.map((d, i) => `<span class="pk ${p.detail && p.detail.dnfs[i] ? 'ok' : ''}"><b>DNF</b>${esc(nm(d))}</span>`).join('')}</div></div>`;
   return `<h2>Everyone's predictions</h2>${others.map(card).join('') || '<p class="muted">Nobody else has a valid prediction for this race.</p>'}
     ${missing.length ? `<p class="muted small">No prediction from: ${missing.map(esc).join(', ')}</p>` : ''}`;
+}
+
+// ------------------------------------------------------------------- WPC
+// World Prediction Champion: our championship over the seasons (/wpc) and player profiles (/player/...).
+const MEDAL = { 1: 'gold', 2: 'silver', 3: 'bronze' };
+function cupSvg(kind, size = 22) {
+  const c = { gold: ['#f5c542', '#b8860b'], silver: ['#d9dde3', '#8a919c'], bronze: ['#d38b4f', '#8c5428'] }[kind];
+  return `<svg class="cup" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="${c[0]}"/><path d="M7 4H4v2a4 4 0 0 0 4 4M17 4h3v2a4 4 0 0 1-4 4" fill="none" stroke="${c[1]}" stroke-width="1.6"/>
+    <path d="M11 13h2v4h-2z" fill="${c[1]}"/><path d="M8 19h8v2H8z" fill="${c[0]}"/><path d="M9 17h6v2H9z" fill="${c[1]}"/>
+    <path d="M9 4.5h1.5v4.5H9z" fill="#fff" opacity=".35"/></svg>`;
+}
+const placeLabel = (n) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+const playerHref = (r) => (r.user ? `/player/${r.user.id}` : `/player/h/${encodeURIComponent(r.name)}`);
+function playerName(r, size = 28) {
+  return `<a class="who-row plain" href="${playerHref(r)}" data-link>${userAvatar(r.user || { name: r.name }, size)}<span>${esc(r.name)}</span></a>`;
+}
+
+async function wpcView(year) {
+  const { seasons, alltime } = await api('/wpc');
+  const pick = seasons.find((s) => s.season === year) || seasons[seasons.length - 1];
+  const finished = seasons.filter((s) => !s.live).reverse();
+  const hall = finished.map((s) => `<div class="hof">
+      <div class="hof-year">WPC ${s.season}</div>
+      ${s.rows.filter((r) => r.position <= 3).map((r) => `<div class="hof-row p${r.position}">${cupSvg(MEDAL[r.position], r.position === 1 ? 26 : 20)}${playerName(r, r.position === 1 ? 30 : 24)}<span class="num muted small">${r.total} pts</span></div>`).join('')}
+      ${s.complete ? '' : `<div class="muted small">after ${esc(s.races[s.races.length - 1])}</div>`}</div>`).join('');
+  const titlesCell = (p) => p.finishes.filter((f) => !f.live && f.position <= 3).sort((a, b) => a.position - b.position || a.season - b.season)
+    .map((f) => `<span title="${placeLabel(f.position)} in ${f.season}">${cupSvg(MEDAL[f.position], 18)}</span>`).join('') || '<span class="muted">-</span>';
+  const allTable = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>Player</th><th>Trophies</th><th class="r">Titles</th><th class="r">Podiums</th><th class="r">Best</th><th class="r">Seasons</th><th class="r">Points</th></tr></thead><tbody>
+    ${alltime.map((p) => `<tr><td>${playerName(p)}</td><td class="cups">${titlesCell(p)}</td><td class="r num"><b>${p.titles}</b></td><td class="r num">${p.podiums}</td><td class="r num">${p.best ? placeLabel(p.best) : '-'}</td><td class="r num">${p.seasons}</td><td class="r num">${p.points}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  const color = (i) => COLORS[i % COLORS.length];
+  const board = pick.rows.map((r) => ({ ...r, per_race: r.totals.map((t, i) => ({ total: t ?? 0, pts: (t ?? 0) - (i ? r.totals[i - 1] ?? 0 : 0) })) }));
+  const races = pick.races.map((n, i) => ({ round: i + 1, name: n }));
+  const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th></tr></thead><tbody>
+    ${pick.rows.map((r, i) => `<tr class="${r.position === 1 ? 'lead' : ''}"><td class="num">${!pick.live && MEDAL[r.position] ? cupSvg(MEDAL[r.position], 18) : r.position}</td>
+      <td><span class="who-row"><span class="dot" style="background:${color(i)}"></span>${playerName(r)}</span></td><td class="r num"><b>${r.total}</b></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  app.innerHTML = shell(`
+    <div class="row between"><h1>${cupSvg('gold', 30)} World Prediction Champion</h1><a class="small muted" href="/" data-link>← Home</a></div>
+    <p class="muted">Our own championship: everybody's prediction points over a whole Formula 1 season.</p>
+    <h2>Hall of fame</h2><div class="hof-grid">${hall}</div>
+    <h2 style="margin-top:20px">All-time</h2>${allTable}
+    <h2 style="margin-top:20px">Seasons</h2>
+    <nav class="tabs">${seasons.map((s) => `<a href="/wpc/${s.season}" data-link class="${s === pick ? 'on' : ''}">${s.season}${s.live ? ' (now)' : ''}</a>`).join('')}</nav>
+    ${pick.live ? `<p class="muted small">This season comes from the app league. It counts the races scored in the app so far.</p>` : ''}
+    ${standings}${races.length ? trendChart(races, board, color) : ''}`);
+}
+
+async function playerView(apiPath) {
+  const data = await api(apiPath);
+  const pl = data.player;
+  const team = pl.favorite_team && teamBySlug(pl.favorite_team);
+  const trophies = data.history.filter((h) => !h.live && h.position <= 3);
+  const shelf = trophies.length
+    ? `<div class="shelf">${trophies.sort((a, b) => a.position - b.position || b.season - a.season).map((h) => `<div class="trophy ${MEDAL[h.position]}">${cupSvg(MEDAL[h.position], 34)}<b>WPC ${h.season}</b><span class="small">${h.position === 1 ? 'Champion' : placeLabel(h.position) + ' place'}</span></div>`).join('')}</div>`
+    : '<p class="muted small">No WPC podium yet.</p>';
+
+  // highlights from every season's numbers
+  const hl = [];
+  for (const h of data.history) {
+    const st = h.stats, y = h.season + (h.live ? ' (so far)' : '');
+    if (st.best.pts >= 4) hl.push(`🎯 <b>${st.best.pts} right picks</b> in one race (${esc(st.best.races.join(', '))} ${y})`);
+    if (st.hot.length >= 2) hl.push(`🔥 <b>${st.hot.length} races in a row</b> with 3+ right picks (${esc(st.hot.from)} to ${esc(st.hot.to)} ${y})`);
+    if (st.scoring.length >= 8) hl.push(`📈 Scored in <b>${st.scoring.length} races in a row</b> (${esc(st.scoring.from)} to ${esc(st.scoring.to)} ${y})`);
+    if (st.led >= 3) hl.push(`👑 Led the WPC after <b>${st.led} races</b> in ${y}`);
+    if (st.drought.length >= 4) hl.push(`🧊 ${st.drought.length} races in a row without a point (${esc(st.drought.from)} to ${esc(st.drought.to)} ${y})`);
+  }
+
+  const seasonRows = data.history.slice().reverse().map((h) => `<tr><td class="num"><b>${h.season}</b>${h.live ? ' <span class="chip">now</span>' : ''}</td>
+    <td>${!h.live && MEDAL[h.position] ? cupSvg(MEDAL[h.position], 18) + ' ' : ''}${placeLabel(h.position)} <span class="muted small">of ${h.players}</span></td>
+    <td class="r num"><b>${h.total}</b></td><td class="r num">${h.stats.avg}</td><td class="r num">${h.stats.best.pts}</td><td class="r num">${h.stats.led}</td>
+    <td>${sparkline(h.stats.per)}</td></tr>`).join('');
+
+  let current = '';
+  const c = data.current;
+  if (c && c.races) {
+    const bar = (label, n, of) => `<div class="acc"><span>${label}</span><div class="otbar wide"><i style="width:${of ? Math.round((n / of) * 100) : 0}%"></i></div><span class="num small">${n}/${of}</span></div>`;
+    current = `<div class="panel"><h2>${c.season} in the app</h2>
+      <div class="facts"><span><b>${c.points}</b> points</span><span><b>${c.races}</b> races predicted</span><span><b>${c.avg}</b> per race</span>${c.best ? `<span>Best: <b>${c.best.pts}</b> at ${esc(c.best.race.replace(' Grand Prix', ''))}</span>` : ''}</div>
+      <h3 class="avhead">Right picks</h3>
+      ${['p1', 'p2', 'p3', 'p4', 'p5', 'p10'].map((k) => bar(k.toUpperCase(), c.hits[k], c.races)).join('')}
+      ${bar('DNF', c.hits.dnf, c.hits.dnfPicked)}</div>`;
+  }
+
+  app.innerHTML = shell(`<a class="small muted" href="/wpc" data-link>← WPC</a>
+    <div class="profile-head">${userAvatar(pl.id ? pl : { name: pl.name }, 84)}<div>
+      <h1>${esc(pl.name)}</h1>
+      ${data.wpc_name && data.wpc_name !== pl.name ? `<div class="muted small">In the WPC tables as ${esc(data.wpc_name)}</div>` : ''}
+      ${team ? `<div class="muted small">Supports ${esc(team.name)}</div>` : ''}
+      ${!pl.id ? '<div class="muted small">No account in the app yet</div>' : ''}
+      ${data.titles ? `<div class="facts" style="margin-top:8px"><span><b>${data.titles.titles}</b> title${data.titles.titles === 1 ? '' : 's'}</span><span><b>${data.titles.podiums}</b> podium${data.titles.podiums === 1 ? '' : 's'}</span><span><b>${data.titles.seasons}</b> season${data.titles.seasons === 1 ? '' : 's'}</span></div>` : ''}
+    </div></div>
+    <div class="panel"><h2>Trophies</h2>${shelf}</div>
+    ${hl.length ? `<div class="panel"><h2>Highlights</h2><ul class="hl">${hl.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
+    ${data.history.length ? `<div class="panel flush"><div class="scroll"><table><thead><tr><th>Season</th><th>Finish</th><th class="r">Points</th><th class="r">Per race</th><th class="r">Best race</th><th class="r">Races led</th><th>Points per race</th></tr></thead><tbody>${seasonRows}</tbody></table></div></div>` : ''}
+    ${current}`);
+}
+
+// Tiny bar chart of the points in each race of a season.
+function sparkline(per) {
+  const max = Math.max(1, ...per);
+  const w = 3, gap = 1, h = 22;
+  return `<svg class="spark" width="${per.length * (w + gap)}" height="${h}" viewBox="0 0 ${per.length * (w + gap)} ${h}" aria-hidden="true">${per.map((p, i) => `<rect x="${i * (w + gap)}" y="${h - Math.max(1, (p / max) * h)}" width="${w}" height="${Math.max(1, (p / max) * h)}" rx="1" fill="${p ? 'var(--red)' : '#3a3f4b'}"/>`).join('')}</svg>`;
 }
 
 // -------------------------------------------------------- click handling

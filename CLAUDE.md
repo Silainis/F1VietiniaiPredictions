@@ -39,6 +39,13 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   formula1.com /en/results/<year>/drivers and /team (`src/standings.js`, table standings, GET /api/standings);
   last season read once, current every 3 h by cron. Team names matched via teamKey() in public/app.js (Sauber=Audi, RB=Racing Bulls).
 
+- WPC (World Prediction Champion), `src/wpc.js`: 2024 and 2025 running totals typed in from the owner's spreadsheets
+  (2025 Abu Dhabi column was empty: standings after Qatar). Current season = live scoreboard of league WPC_LEAGUE_ID=1 (Vietiniai).
+  PLAYERS maps old table names to usernames (Šilainis=silainis, Agnė=agny, Martynas=martynas, Darius=muerto);
+  Vakaris, Eglė, Karolis, Justas, Racer X have no account yet: add them to PLAYERS when they sign up.
+  Pages: /wpc (hall of fame, all-time, seasons + chart), /player/:id and /player/h/:name (trophies gold/silver/bronze
+  per WPC year, highlights: best race, 3+ streaks, scoring streak, races led, droughts; season table; current pick accuracy).
+
 ## Working notes
 - Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
 - Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, Wikipedia photos.

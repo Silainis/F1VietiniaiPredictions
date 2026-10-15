@@ -7,6 +7,7 @@ import { saveAvatar, avatarResponse } from './avatars.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
 import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { syncStandings, getStandings } from './standings.js';
+import { WPC_LEAGUE_ID, PLAYERS, wpcSeasons, allTime, seasonStats } from './wpc.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
 let assetsApplied = null;
@@ -370,6 +371,14 @@ async function handleApi(request, env, ctx, url) {
     return json({ temp_password: temp });
   }
 
+  // ---- WPC (World Prediction Champion): all seasons, the all-time table and player profiles
+  if (method === 'GET' && path === '/api/wpc') {
+    const seasons = await wpcSeasons(env, getScoreboard);
+    return json({ seasons, alltime: allTime(seasons), league_id: WPC_LEAGUE_ID });
+  }
+  if ((m = path.match(/^\/api\/players\/(\d+)$/)) && method === 'GET') return json(await playerProfile(env, { id: Number(m[1]) }));
+  if ((m = path.match(/^\/api\/players\/h\/(.+)$/)) && method === 'GET') return json(await playerProfile(env, { name: decodeURIComponent(m[1]) }));
+
   // ---- profile picture: a preset ({ avatar: 'helmet:<team>' | 'team:<team>' | 'driver:<driver id>' | '' })
   // or an uploaded picture ({ image: 'data:image/jpeg;base64,...' }, made small in the browser)
   if (method === 'POST' && path === '/api/account/avatar') {
@@ -463,6 +472,58 @@ async function handleApi(request, env, ctx, url) {
 }
 
 // ------------------------------------------------------------ data helpers
+
+// Profile of an app user ({ id }) or of a name from the old WPC tables ({ name }).
+async function playerProfile(env, key) {
+  let user = null;
+  if (key.id) {
+    user = await one(env.DB.prepare(`SELECT id, name, username, avatar, favorite_team, created_at FROM users WHERE id=?`).bind(key.id));
+    if (!user) throw new HttpError(404, 'Player not found.');
+  }
+  const seasons = await wpcSeasons(env, getScoreboard);
+  const table = allTime(seasons);
+  const entry = user ? table.find((p) => p.user && p.user.id === user.id) : table.find((p) => p.name === key.name);
+  if (!user && !entry) throw new HttpError(404, 'Player not found.');
+  if (!user && entry?.user) user = await one(env.DB.prepare(`SELECT id, name, username, avatar, favorite_team, created_at FROM users WHERE id=?`).bind(entry.user.id));
+  const wpcName = entry?.name || Object.keys(PLAYERS).find((n) => PLAYERS[n] === user?.username) || null;
+
+  // Season-by-season WPC finishes and the per-race running totals for a sparkline
+  const history = seasons.map((s) => {
+    const r = s.rows.find((x) => (user && x.user && x.user.id === user.id) || (wpcName && x.name === wpcName));
+    return r ? { season: s.season, position: r.position, total: r.total, players: s.rows.length, live: s.live, complete: s.complete, totals: r.totals, races: s.races, stats: seasonStats(s, r) } : null;
+  }).filter(Boolean);
+
+  // This season in the app: how often each kind of pick was right
+  let current = null;
+  if (user) {
+    const { results: preds } = await env.DB.prepare(
+      `SELECT p.*, r.name AS race_name FROM predictions p JOIN races r ON r.round = p.round
+       WHERE p.user_id=? AND p.league_id=? AND p.status IN ('ok','late_approved') ORDER BY p.round`
+    ).bind(user.id, WPC_LEAGUE_ID).all();
+    const hits = { p1: 0, p2: 0, p3: 0, p4: 0, p5: 0, p10: 0, dnf: 0, dnfPicked: 0 };
+    let races = 0, points = 0, best = null;
+    for (const p of preds) {
+      const lookup = await resultLookup(env, p.round);
+      if (!lookup) continue;
+      const sc = scorePrediction(p, lookup);
+      races++;
+      points += sc.pts;
+      for (const k of PICK_KEYS) if (sc.detail[k]) hits[k]++;
+      hits.dnf += sc.detail.dnfs.filter(Boolean).length;
+      hits.dnfPicked += sc.detail.dnfs.length;
+      if (!best || sc.pts > best.pts) best = { round: p.round, race: p.race_name, pts: sc.pts };
+    }
+    current = { season: Number(env.SEASON || new Date().getUTCFullYear()), races, points, best, hits, avg: races ? Math.round((points / races) * 10) / 10 : 0 };
+  }
+
+  return {
+    player: user ? { id: user.id, name: user.name, avatar: user.avatar, favorite_team: user.favorite_team, joined: user.created_at } : { id: null, name: wpcName, avatar: null },
+    wpc_name: wpcName,
+    titles: entry ? { titles: entry.titles, podiums: entry.podiums, seasons: entry.seasons, best: entry.best, points: entry.points } : null,
+    history,
+    current,
+  };
+}
 
 async function listDrivers(env, includeAll = false) {
   const hasResults = (await one(env.DB.prepare(`SELECT COUNT(*) AS n FROM results`))).n > 0;
