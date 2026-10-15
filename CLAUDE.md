@@ -42,7 +42,7 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - WPC (World Prediction Champion), `src/wpc.js`: 2024 and 2025 running totals typed in from the owner's spreadsheets
   (2025 Abu Dhabi column was empty: standings after Qatar; Racer X = AI guesser, removed on owner's request). 2026 spreadsheet covers rounds 1-17 (to Singapore); races after the
   last spreadsheet column are added from the app league WPC_LEAGUE_ID=1 (Vietiniai), app round n = column n.
-  Open question: spreadsheet points look like ~1 per race while app scoring gives up to 9 (Silainis got 7 in app Singapore vs +1 in sheet).
+  Spreadsheet uses the same scoring as the app (confirmed by owner); for rounds the sheet covers, the sheet wins.
   PLAYERS maps old table names to usernames (Šilainis=silainis, Agnė=agny, Martynas=martynas, Darius=muerto);
   Vakaris, Eglė, Karolis, Justas, Andrius, Ramūnas, Veronika have no account yet: add them to PLAYERS when they sign up.
   Pages: /wpc (hall of fame, all-time, seasons + chart), /player/:id and /player/h/:name (trophies gold/silver/bronze
