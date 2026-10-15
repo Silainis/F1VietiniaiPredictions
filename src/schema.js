@@ -76,16 +76,61 @@ export const SCHEMA = [
     read INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   )`,
+  // Qualifying classification per race (formula1.com results page, Jolpica as a fallback).
+  `CREATE TABLE IF NOT EXISTS qualifying (
+    round INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    pos_text TEXT,
+    number TEXT,
+    code TEXT,
+    driver_id TEXT,
+    name TEXT,
+    team TEXT,
+    q1 TEXT, q2 TEXT, q3 TEXT,
+    laps INTEGER,
+    source TEXT,
+    fetched_at INTEGER,
+    PRIMARY KEY (round, position)
+  )`,
+  // Past editions of a race at the same circuit: podium plus lead changes and overtakes
+  // worked out from the lap-by-lap positions (see src/insights.js).
+  `CREATE TABLE IF NOT EXISTS track_history (
+    circuit_id TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    race_name TEXT,
+    podium TEXT NOT NULL DEFAULT '[]',
+    laps INTEGER,
+    lead_changes INTEGER,
+    leaders INTEGER,
+    overtakes INTEGER,
+    stats_done INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (circuit_id, season)
+  )`,
+  `CREATE TABLE IF NOT EXISTS track_meta (
+    circuit_id TEXT PRIMARY KEY,
+    podiums_at INTEGER
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications (user_id, read)`,
   `CREATE INDEX IF NOT EXISTS idx_pred_league_round ON predictions (league_id, round)`,
 ];
+
+async function addColumns(env, statements) {
+  for (const sql of statements) await env.DB.prepare(sql).run().catch(() => {});
+}
 
 let ready = null;
 export function ensureSchema(env) {
   if (!ready) {
     ready = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)))
       // columns added after the first release; the error when the column already exists is expected
-      .then(() => env.DB.prepare(`ALTER TABLE users ADD COLUMN favorite_team TEXT`).run().catch(() => {}))
+      .then(() => addColumns(env, [
+        `ALTER TABLE users ADD COLUMN favorite_team TEXT`,
+        `ALTER TABLE races ADD COLUMN quali_ts INTEGER`,
+        `ALTER TABLE races ADD COLUMN f1_meeting_id TEXT`,
+        `ALTER TABLE races ADD COLUMN f1_slug TEXT`,
+        `ALTER TABLE races ADD COLUMN quali_checked_at INTEGER`,
+      ]))
       .catch((e) => {
       ready = null;
       throw e;

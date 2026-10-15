@@ -5,6 +5,7 @@ import {
 import { sendMail, emailTemplate } from './mail.js';
 import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
+import { getRaceInsights } from './insights.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
 let assetsApplied = null;
@@ -102,7 +103,7 @@ async function leagueAdmins(env, leagueId) {
 
 async function ensureCalendar(env) {
   const c = await one(env.DB.prepare(`SELECT COUNT(*) AS n FROM races`));
-  if (!c || c.n === 0) await syncAll(env); // first visit: fill the database right away
+  if (!c || c.n === 0) await syncAll(env, { extras: false }); // first visit: fill the database right away
 }
 
 // ------------------------------------------------------------------ router
@@ -204,6 +205,13 @@ async function handleApi(request, env, ctx, url) {
        FROM races r ORDER BY r.round`
     ).all();
     return json({ races: results.map((r) => ({ ...r, has_results: !!r.has_results, circuit_image: r.circuit_image === '-' ? null : r.circuit_image })), server_time: now() });
+  }
+
+  // qualifying classification + history of the race at this circuit (filled by the cron job)
+  if ((m = path.match(/^\/api\/races\/(\d+)\/insights$/)) && method === 'GET') {
+    const data = await getRaceInsights(env, Number(m[1]));
+    if (!data) throw new HttpError(404, 'Race not found.');
+    return json(data);
   }
 
   if (method === 'GET' && path === '/api/drivers') {

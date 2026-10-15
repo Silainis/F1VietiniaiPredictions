@@ -103,7 +103,7 @@ Then in `wrangler.jsonc` set `"MAIL_FROM": "F1 Predictions <noreply@yourdomain.c
 | Visibility | Other players' picks are hidden until the race starts | `getRacePredictions` in `src/index.js` |
 | Late predictions | Approved inside the app by any admin of the league (bell icon + Approvals tab). Not counted until approved. If the league has a single admin, their own late entry is approved automatically. | `savePrediction` in `src/index.js` |
 
-**Data sources.** Calendar, race start times and results come from the [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the maintained successor of Ergast), which carries the official classification as clean JSON. I did not scrape formula1.com: its results pages are rendered by the browser and change layout, so a scraper would break often. Driver photos come from **formula1.com/en/drivers** (listed in `src/f1photos.js`). Track maps come from the **race pages on formula1.com** (for example `/en/racing/2026/australia`, listed in `src/f1tracks.js`) and are shown in black and white. A driver without a formula1.com photo falls back to Wikipedia, then to initials; a circuit without a map shows a chequered-flag placeholder.
+**Data sources.** Calendar, race start times and results come from the [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the maintained successor of Ergast), which carries the official classification as clean JSON. The **qualifying** table on each race page is read from the formula1.com results page (for example `/en/results/2026/races/1296/singapore/qualifying`); the number in that address is read from the season results page, because it skips numbers when the calendar changes. If formula1.com cannot be read, Jolpica's qualifying data is used instead. The **track history** (podium, lead changes and estimated overtakes of the last 5 races at the circuit) is worked out from Jolpica's lap-by-lap data; see `src/insights.js`. Driver photos come from **formula1.com/en/drivers** (listed in `src/f1photos.js`). Track maps come from the **race pages on formula1.com** (for example `/en/racing/2026/australia`, listed in `src/f1tracks.js`) and are shown in black and white. A driver without a formula1.com photo falls back to Wikipedia, then to initials; a circuit without a map shows a chequered-flag placeholder.
 
 ## 6. Troubleshooting
 
@@ -111,6 +111,8 @@ Then in `wrangler.jsonc` set `"MAIL_FROM": "F1 Predictions <noreply@yourdomain.c
 - **A track map is missing (chequered flag shown).** That circuit is not listed in `src/f1tracks.js` yet; see "Updating track maps" below. The circuit ids the app uses are visible at `/api/races` (while logged in).
 - **Images appear slowly right after the first deploy.** Driver photos and track maps are applied immediately; only the Wikipedia fallback for unlisted drivers is fetched in small batches (the free plan allows 50 outgoing requests per run), so it fills in over a few 30-minute cycles, or immediately via the `/api/admin/sync` link above.
 - **Results did not arrive after a race.** They are fetched 2 hours after the start time, then every 30 minutes until published.
+- **Qualifying says "not public yet" after the session.** It is checked every 30 minutes from one hour after qualifying, and read once more a couple of hours later in case of penalties. The table shows the qualifying order, not the final grid.
+- **Track history says it is still being collected.** Each past race needs about 15 requests to Jolpica, so the history fills in over a few 30-minute cycles (next race first, then the rest of the calendar). It is fetched once and kept.
 - **Run it locally:** create a file `.dev.vars` with `ADMIN_KEY=anything`, then `npm run dev` and open http://localhost:8787.
 
 ## 7. Updating driver photos
@@ -150,6 +152,7 @@ Like the photos, the maps belong to Formula One and are only linked. If formula1
 wrangler.jsonc     Cloudflare configuration (name, database, schedule)
 src/index.js       API: accounts, leagues, invites, predictions, approvals, scoreboard
 src/sync.js        Imports calendar, drivers, results, photos and track layouts
+src/insights.js    Qualifying results and track history shown on each race page
 src/f1photos.js    Driver photo addresses from formula1.com/en/drivers
 src/f1tracks.js    Circuit map addresses from the formula1.com race pages
 src/scoring.js     Scoring rules

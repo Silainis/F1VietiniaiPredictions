@@ -19,8 +19,14 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - Favorite team (sign-up or account page) shows a side panel: logo, drivers, car, race photos (`src/f1teams.js`).
 - Images are linked from formula1.com (driver photos `src/f1photos.js`, track maps `src/f1tracks.js`, team images `src/f1teams.js`). Track maps are shown black and white with a country flag (flagcdn.com) in the corner.
 - Header logo is `public/f1-logo.png`.
+- Race page shows a Qualifying table and Track history (`src/insights.js`, `GET /api/races/:round/insights`).
+  Qualifying: formula1.com results page (meeting id read from /en/results/<year>/races, stored in races.f1_meeting_id), Jolpica fallback.
+  Before it is published the page says it is not public yet; history still shows.
+  History: last 5 editions at the circuit (podium + winner's grid), lead changes, overtakes estimated from Jolpica laps
+  (pit in/out laps and >15% slow cars excluded, first lap excluded). Cached forever in track_history.
 
 ## Working notes
-- Data sources: Jolpica F1 API (calendar, drivers, results), formula1.com media for images.
+- Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
+- Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, track history, Wikipedia photos.
 - Photo/track/team lists need re-checking at the start of each season (README sections 7 and 8).
 - Tests used so far were local scripts (mock Jolpica, D1 shim); they are not in the repo.

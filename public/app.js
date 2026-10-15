@@ -433,10 +433,78 @@ async function raceView(lid, round) {
       <div id="slots"></div>
       ${isEditable ? `<p><button class="primary" data-act="save">${data.locked ? 'Send late prediction for approval' : 'Save prediction'}</button></p>` : ''}
     </div>
+    <div id="insights"><div class="panel muted small">Loading qualifying and track history…</div></div>
     ${results ? resultsPanel(results) : ''}
     ${data.locked ? othersPanel(others, missing, !!results) : `<p class="muted small">Other players' predictions become visible when the race starts.</p>`}`);
   paintSlots(mine && mine.detail);
   if (!data.locked) startCountdown('cd', race.race_ts, 'closes in ');
+  loadInsights(round);
+}
+
+// ---------------------------------------------- qualifying + track history
+async function loadInsights(round) {
+  let data;
+  try { data = await api(`/races/${round}/insights`); } catch { data = null; }
+  const el = document.getElementById('insights');
+  if (!el || !raceCtx || raceCtx.round !== round) return; // the user moved on to another page
+  el.innerHTML = data ? qualiPanel(data.qualifying) + historyPanel(data.history) : '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>';
+}
+
+const surname = (name) => String(name || '').split(' ').slice(-1)[0];
+function driverCell(r, size = 32) {
+  const d = (r.driver_id && driverById(r.driver_id)) || (state.drivers || []).find((x) => x.code && x.code === r.code);
+  return `<span class="drv">${avatar(d || { code: r.code }, size)}<span><b>${esc(r.name)}</b><span class="muted small team-sm">${esc(r.team || '')}</span></span></span>`;
+}
+
+function qualiPanel(q) {
+  const head = `<div class="row between"><h2>Qualifying</h2>${q.link ? `<a class="small muted" href="${esc(q.link)}" target="_blank" rel="noopener">formula1.com ↗</a>` : ''}</div>`;
+  if (q.status === 'not_yet') {
+    return `<div class="panel">${head}<p class="muted">Qualifying results are not public yet.${q.quali_ts ? ` Qualifying starts <b>${fmtDate(q.quali_ts)}</b>.` : ''}</p></div>`;
+  }
+  if (q.status === 'waiting') {
+    return `<div class="panel">${head}<p class="muted">Qualifying has taken place, but the official results are not public yet. They appear here automatically (checked every 30 minutes).</p></div>`;
+  }
+  const best = (r) => r.q3 || r.q2 || r.q1;
+  const rows = q.rows.map((r) => {
+    const cut = r.position === 10 || r.position === 15 ? ' class="cut"' : '';
+    const t = (v) => `<td class="r${v && v === best(r) ? ' best' : ''}">${v ? esc(v) : '<span class="muted">-</span>'}</td>`;
+    return `<tr${cut}><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td>${t(r.q1)}${t(r.q2)}${t(r.q3)}</tr>`;
+  }).join('');
+  return `<div class="panel">${head}
+    <div class="scroll"><table class="quali"><thead><tr><th>Pos</th><th>Driver</th><th class="r">Q1</th><th class="r">Q2</th><th class="r">Q3</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small" style="margin-top:8px">Qualifying order, not the final starting grid: grid penalties can still move drivers.${q.source === 'jolpica' ? ' Source: Jolpica F1.' : ''}</p></div>`;
+}
+
+function historyPanel(h) {
+  const head = `<h2>Track history</h2>`;
+  if (h.status === 'loading') return `<div class="panel">${head}<p class="muted">The history of this track is still being collected. Check back in a little while.</p></div>`;
+  if (h.status === 'none' || !h.editions.length) return `<div class="panel">${head}<p class="muted">This is the first Formula 1 race at this circuit, so there is no history yet.</p></div>`;
+
+  const eds = h.editions;
+  const done = eds.filter((e) => e.stats_done && e.overtakes !== null);
+  const maxOt = Math.max(1, ...done.map((e) => e.overtakes));
+  const pod = (p, showGrid) => p ? `<b>${esc(surname(p.name))}</b>${showGrid && p.grid ? ` <span class="muted small">from P${p.grid}</span>` : ''}<div class="muted small">${esc(p.team || '')}</div>` : '<span class="muted">-</span>';
+  const stat = (e, v) => (e.stats_done ? (v === null ? '<span class="muted">n/a</span>' : v) : '<span class="muted">…</span>');
+  const rows = eds.map((e) => `<tr><td class="num"><b>${e.season}</b></td><td>${pod(e.podium[0], true)}</td><td>${pod(e.podium[1])}</td><td>${pod(e.podium[2])}</td>
+    <td class="r">${stat(e, e.lead_changes)}${e.stats_done && e.leaders ? `<div class="muted small">${e.leaders} leader${e.leaders === 1 ? '' : 's'}</div>` : ''}</td>
+    <td class="r">${stat(e, e.overtakes)}${e.stats_done && e.overtakes !== null ? `<div class="otbar"><i style="width:${Math.round((e.overtakes / maxOt) * 100)}%"></i></div>` : ''}</td></tr>`).join('');
+
+  // a few quick facts
+  const facts = [];
+  const avg = (k) => Math.round(done.reduce((a, e) => a + e[k], 0) / done.length);
+  if (done.length) facts.push(`About <b>${avg('overtakes')}</b> overtakes and <b>${avg('lead_changes')}</b> lead changes per race`);
+  const winners = eds.map((e) => e.podium[0]).filter(Boolean);
+  const fromPole = winners.filter((w) => w.grid === 1).length;
+  if (winners.length) facts.push(`Won from pole <b>${fromPole} of ${winners.length}</b> times`);
+  const wins = {};
+  winners.forEach((w) => (wins[w.name] = (wins[w.name] || 0) + 1));
+  const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0];
+  if (top && top[1] > 1) facts.push(`<b>${esc(top[0])}</b> won here ${top[1]} times`);
+
+  return `<div class="panel">${head}
+    ${facts.length ? `<div class="facts">${facts.map((f) => `<span>${f}</span>`).join('')}</div>` : ''}
+    <div class="scroll"><table class="hist"><thead><tr><th>Year</th><th>Winner</th><th>2nd</th><th>3rd</th><th class="r">Lead changes</th><th class="r">Overtakes</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small" style="margin-top:8px">Last ${eds.length} race${eds.length === 1 ? '' : 's'} at this circuit. Overtakes are estimated from lap-by-lap positions (leaving out pit stops, cars that slowed down sharply and the first lap), so they can differ from official counts. Lead changes include leads swapped during pit stops. ${h.status === 'partial' ? 'Some years are still being collected (…). ' : ''}Data: Jolpica F1.</p></div>`;
 }
 
 function slotButton(key, label, id, detail, idx) {

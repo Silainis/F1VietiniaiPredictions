@@ -175,3 +175,22 @@ td.r, th.r { text-align: right; }
   .layout { grid-template-columns: 1fr; }
   .teamside { position: static; }
 }
+
+/* qualifying + track history on the race page */
+.drv { display: flex; align-items: center; gap: 10px; }
+.drv > span:last-child { display: flex; flex-direction: column; line-height: 1.25; }
+table.quali td, table.hist td { vertical-align: middle; }
+table.quali td { padding-top: 6px; padding-bottom: 6px; }
+table.quali tr.cut td { border-bottom: 2px dashed #4a505c; }
+table.quali td.best { color: var(--text); font-weight: 700; }
+table.quali td.r { color: var(--muted); }
+table.hist td { padding-top: 8px; padding-bottom: 8px; }
+.otbar { width: 80px; height: 4px; background: var(--panel-2); border-radius: 2px; margin: 4px 0 0 auto; overflow: hidden; }
+.otbar i { display: block; height: 100%; background: var(--red); border-radius: 2px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.facts span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .85rem; color: var(--muted); }
+.facts b { color: var(--text); }
+@media (max-width: 640px) {
+  .team-sm { display: none; }
+  table.quali th, table.quali td, table.hist th, table.hist td { padding-left: 8px; padding-right: 8px; }
+}

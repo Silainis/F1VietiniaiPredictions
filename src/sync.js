@@ -7,6 +7,7 @@
 
 import { f1PhotoFor } from './f1photos.js';
 import { f1TrackFor } from './f1tracks.js';
+import { Budget, syncQualifying, syncTrackHistory } from './insights.js';
 
 const UA = 'f1-vietiniai-predictions/1.0 (https://f1-vietiniai-predictions.f1vietiniai.workers.dev)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,11 +33,12 @@ export async function syncSchedule(env) {
   const data = await getJson(env, `${base(env)}/${season(env)}.json?limit=100`);
   const races = data.MRData.RaceTable.Races || [];
   const stmt = env.DB.prepare(
-    `INSERT INTO races (round, name, circuit_id, circuit_name, locality, country, race_ts, wiki_url, circuit_wiki_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO races (round, name, circuit_id, circuit_name, locality, country, race_ts, wiki_url, circuit_wiki_url, quali_ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(round) DO UPDATE SET name=excluded.name, circuit_id=excluded.circuit_id,
        circuit_name=excluded.circuit_name, locality=excluded.locality, country=excluded.country,
-       race_ts=excluded.race_ts, wiki_url=excluded.wiki_url, circuit_wiki_url=excluded.circuit_wiki_url`
+       race_ts=excluded.race_ts, wiki_url=excluded.wiki_url, circuit_wiki_url=excluded.circuit_wiki_url,
+       quali_ts=excluded.quali_ts`
   );
   if (races.length) {
     await env.DB.batch(
@@ -50,7 +52,8 @@ export async function syncSchedule(env) {
           r.Circuit.Location.country,
           Date.parse(`${r.date}T${r.time || '13:00:00Z'}`),
           r.url || null,
-          r.Circuit.url || null
+          r.Circuit.url || null,
+          r.Qualifying?.date ? Date.parse(`${r.Qualifying.date}T${r.Qualifying.time || '14:00:00Z'}`) : null
         )
       )
     );
@@ -186,14 +189,21 @@ export async function syncImages(env, max = 30) {
   return used;
 }
 
-export async function syncAll(env) {
+// One run makes at most ~45 outside requests (the free Workers plan allows 50). The fixed jobs go
+// first; qualifying, track history and missing photos share what is left, in that order.
+export async function syncAll(env, { extras = true } = {}) {
   const out = {};
+  const budget = new Budget(Number(env.SYNC_BUDGET || 45));
+  budget.take(2);
   try { out.races = await syncSchedule(env); } catch (e) { out.racesError = e.message; }
   try { out.f1tracks = await applyF1Tracks(env); } catch (e) { out.f1tracksError = e.message; }
   try { out.drivers = await syncDrivers(env); } catch (e) { out.driversError = e.message; }
-  let used = 2;
-  try { used += await syncResults(env); } catch (e) { out.resultsError = e.message; }
+  try { budget.spend(await syncResults(env)); } catch (e) { out.resultsError = e.message; }
   try { out.f1photos = await applyF1Photos(env); } catch (e) { out.f1photosError = e.message; }
-  try { out.images = await syncImages(env, 44 - used); } catch (e) { out.imagesError = e.message; }
+  if (extras) {
+    try { out.qualifying = await syncQualifying(env, budget); } catch (e) { out.qualifyingError = e.message; }
+    try { out.history = await syncTrackHistory(env, budget); } catch (e) { out.historyError = e.message; }
+  }
+  try { out.images = await syncImages(env, Math.min(10, budget.left)); } catch (e) { out.imagesError = e.message; }
   return out;
 }
