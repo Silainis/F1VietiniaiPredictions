@@ -14,13 +14,16 @@ export const PLAYERS = {
   'Agnė': 'agny',
   'Martynas': 'martynas',
   'Darius': 'muerto',
-  // 'Vakaris': '', 'Eglė': '', 'Karolis': '', 'Justas': '', 'Racer X': '',
+  // no account yet: Vakaris, Eglė, Karolis, Justas, Racer X, Andrius, Ramūnas, Veronika
 };
 
 const R2024 = ['Bahrain', 'Saudi Arabian', 'Australian', 'Japanese', 'Chinese', 'Miami', 'Emilia Romagna', 'Monaco', 'Canadian', 'Spanish', 'Austrian', 'British',
   'Hungarian', 'Belgian', 'Dutch', 'Italian', 'Azerbaijan', 'Singapore', 'United States', 'Mexico City', 'São Paulo', 'Las Vegas', 'Qatar', 'Abu Dhabi'];
 const R2025 = ['Australian', 'Chinese', 'Japanese', 'Bahrain', 'Saudi Arabian', 'Miami', 'Emilia-Romagna', 'Monaco', 'Spanish', 'Canadian', 'Austrian', 'British',
   'Belgian', 'Hungarian', 'Dutch', 'Italian', 'Azerbaijan', 'Singapore', 'United States', 'Mexico City', 'São Paulo', 'Las Vegas', 'Qatar', 'Abu Dhabi'];
+
+const R2026 = ['Australian', 'Chinese', 'Japanese', 'Miami', 'Canadian', 'Monaco', 'Barcelona', 'Austrian', 'British', 'Belgian', 'Hungarian', 'Dutch',
+  'Italian', 'Spanish', 'Azerbaijan', 'Bahrain', 'Singapore', 'United States', 'Mexico City', 'São Paulo', 'Las Vegas', 'Qatar', 'Abu Dhabi'];
 
 // Running totals after each race (null = not filled in the spreadsheet).
 export const HISTORY = [
@@ -52,6 +55,23 @@ export const HISTORY = [
       'Martynas': [0, 2, 8, 10, 11, 11, 13, 14, 17, 17, 19, 20, 20, 20, 20, 21, 22, 24, 25, 25, 27, 27, 28, null],
     },
   },
+  {
+    // Current season: the spreadsheet covers the races up to Singapore (round 17). The races after
+    // that are added from the app league, in calendar order (app round n = column n).
+    season: 2026,
+    races: R2026,
+    rows: {
+      'Agnė': [1, 3, 5, 8, 8, 9, 9, 10, 12, 13, 14, 14, 14, 14, 14, 19, 19],
+      'Andrius': [2, 2, 4, 7, 8, 8, 8, 9, 11, 12, 13, 13, 13, 14, 17, 17, 17],
+      'Darius': [2, 2, 4, 4, 5, 5, 5, 5, 5, 6, 7, 7, 7, 7, 7, 7, 7],
+      'Eglė': [1, 2, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5],
+      'Martynas': [2, 2, 2, 2, 2, 4, 5, 7, 7, 10, 10, 10, 10, 10, 12, 13, 13],
+      'Ramūnas': [1, 1, 3, 4, 5, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+      'Šilainis': [2, 2, 4, 5, 6, 7, 9, 9, 11, 13, 15, 16, 16, 18, 18, 20, 21],
+      'Vakaris': [1, 3, 5, 6, 6, 6, 6, 6, 10, 12, 12, 14, 14, 14, 14, 18, 19],
+      'Veronika': [0, 2, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+    },
+  },
 ];
 
 // One season in a common shape: races (names) and players with running totals, sorted by final points.
@@ -74,43 +94,62 @@ async function accountsByUsername(env) {
 export async function wpcSeasons(env, getScoreboard) {
   const accounts = await accountsByUsername(env);
   const userFor = (name) => accounts.get(PLAYERS[name]) || null;
-  const seasons = HISTORY.map((h) => {
-    const last = Math.max(...Object.values(h.rows).map((t) => t.reduce((n, v, i) => (v !== null ? i : n), -1)));
-    const rows = Object.entries(h.rows).map(([name, totals]) => {
-      const t = totals.slice(0, last + 1);
-      const u = userFor(name);
-      return { name, user: u ? { id: u.id, name: u.name, avatar: u.avatar } : null, totals: t, total: t[t.length - 1] ?? 0 };
-    });
-    return { season: h.season, races: h.races.slice(0, last + 1), complete: last === h.races.length - 1, live: false, rows: rankRows(rows) };
-  });
+  const year = Number(env.SEASON || new Date().getUTCFullYear());
 
-  // current season from the app league
+  // The app league's scoreboard, for the current season's races after the spreadsheet stops.
+  let app = null;
   try {
     const sb = await getScoreboard(env, WPC_LEAGUE_ID);
-    const year = Number(env.SEASON || new Date().getUTCFullYear());
-    if (!seasons.some((s) => s.season === year)) {
-      const reverse = new Map(Object.entries(PLAYERS).map(([n, u]) => [u, n]));
-      const { results: users } = await env.DB.prepare(`SELECT id, username FROM users`).all();
-      const uname = new Map(users.map((u) => [u.id, u.username]));
-      // the app started part-way through the season: leave out the races before anyone predicted
-      const first = sb.races.findIndex((_, i) => sb.board.some((b) => b.per_race[i]?.submitted));
-      const from = first < 0 ? sb.races.length : first;
-      const base = (b) => (from > 0 ? b.per_race[from - 1].total : 0);
-      seasons.push({
-        season: year,
-        races: sb.races.slice(from).map((r) => r.name.replace(' Grand Prix', '')),
-        complete: false,
-        live: true,
-        rows: rankRows(sb.board.map((b) => ({
-          // a known player keeps the name from the old tables, so their seasons line up
-          name: reverse.get(uname.get(b.id)) || b.name,
-          user: { id: b.id, name: b.name, avatar: b.avatar },
-          totals: b.per_race.slice(from).map((p) => p.total - base(b)),
-          total: b.total - base(b),
-        }))),
-      });
-    }
+    const reverse = new Map(Object.entries(PLAYERS).map(([n, u]) => [u, n]));
+    const { results: users } = await env.DB.prepare(`SELECT id, username FROM users`).all();
+    const uname = new Map(users.map((u) => [u.id, u.username]));
+    app = {
+      // scored rounds only; app round n is column n-1 of the season
+      rounds: sb.races.map((r) => r.round),
+      names: sb.races.map((r) => r.name.replace(' Grand Prix', '')),
+      // a known player keeps the name from the tables, so their seasons line up
+      players: sb.board.map((b) => ({ name: reverse.get(uname.get(b.id)) || b.name, user: { id: b.id, name: b.name, avatar: b.avatar }, per: b.per_race })),
+    };
   } catch (e) { console.error('WPC current season', e.message); }
+
+  const seasons = HISTORY.map((h) => {
+    const last = Math.max(...Object.values(h.rows).map((t) => t.reduce((n, v, i) => (v !== null ? i : n), -1)));
+    let races = h.races.slice(0, last + 1);
+    const rows = Object.entries(h.rows).map(([name, totals]) => {
+      const u = userFor(name);
+      return { name, user: u ? { id: u.id, name: u.name, avatar: u.avatar } : null, totals: totals.slice(0, last + 1) };
+    });
+    const live = h.season === year;
+    if (live && app) {
+      // add the races scored in the app after the spreadsheet's last column
+      const extra = app.rounds.map((round, i) => ({ round, i })).filter((x) => x.round - 1 > last);
+      for (const x of extra) races.push(h.races[x.round - 1] || app.names[x.i]);
+      for (const p of app.players) {
+        let row = rows.find((r) => r.name === p.name);
+        if (!row) { row = { name: p.name, user: p.user, totals: Array(last + 1).fill(0) }; rows.push(row); }
+        if (!row.user) row.user = p.user;
+        let total = row.totals[row.totals.length - 1] ?? 0;
+        for (const x of extra) { total += p.per[x.i]?.pts || 0; row.totals.push(total); }
+      }
+      for (const r of rows) while (r.totals.length < races.length) r.totals.push(r.totals[r.totals.length - 1] ?? 0);
+    }
+    for (const r of rows) r.total = r.totals[r.totals.length - 1] ?? 0;
+    return { season: h.season, races, complete: !live && last === h.races.length - 1, live, rows: rankRows(rows) };
+  });
+
+  // a season with no spreadsheet at all comes only from the app
+  if (app && !seasons.some((s) => s.season === year)) {
+    const first = app.players.length ? app.names.findIndex((_, i) => app.players.some((p) => p.per[i]?.submitted)) : -1;
+    const from = first < 0 ? app.names.length : first;
+    seasons.push({
+      season: year, races: app.names.slice(from), complete: false, live: true,
+      rows: rankRows(app.players.map((p) => {
+        const base = from > 0 ? p.per[from - 1].total : 0;
+        const totals = p.per.slice(from).map((x) => x.total - base);
+        return { name: p.name, user: p.user, totals, total: totals[totals.length - 1] ?? 0 };
+      })),
+    });
+  }
   return seasons.sort((a, b) => a.season - b.season);
 }
 
