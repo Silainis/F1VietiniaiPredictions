@@ -5,10 +5,12 @@ import {
 import { sendMail, emailTemplate } from './mail.js';
 import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
-import { getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
+import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
+import { syncStandings, getStandings } from './standings.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
 let assetsApplied = null;
+let standingsTried = 0;
 const SESSION_DAYS = 30;
 const PICK_KEYS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p10'];
 
@@ -230,6 +232,17 @@ async function handleApi(request, env, ctx, url) {
   if ((m = path.match(/^\/api\/races\/(\d+)\/history\/(\d{4})$/)) && method === 'POST') {
     if (!(await saveEditionStats(env, Number(m[1]), Number(m[2]), await readBody(request)))) throw new HttpError(400, 'Invalid history.');
     return json({ ok: true });
+  }
+
+  // championship standings for sorting the driver picker (filled right away on first use)
+  if (method === 'GET' && path === '/api/standings') {
+    let data = await getStandings(env);
+    if ((!data.last.drivers.length || !data.current.drivers.length) && now() - standingsTried > 5 * 60000) {
+      standingsTried = now();
+      await syncStandings(env, new Budget(4));
+      data = await getStandings(env);
+    }
+    return json(data);
   }
 
   if (method === 'GET' && path === '/api/drivers') {

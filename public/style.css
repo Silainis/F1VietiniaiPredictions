@@ -197,3 +197,6 @@ table.hist td { padding-top: 8px; padding-bottom: 8px; }
 .hist-note { background: var(--amber-soft); color: #ffd978; border-radius: 8px; padding: 8px 12px; font-size: .88rem; margin: 4px 0 12px; }
 table.quali td.grid.down { color: #ff7b72; }
 table.quali td.grid.up { color: var(--green); }
+.pick-head { grid-column: 1 / -1; padding: 10px 2px 0; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.pick-head:first-child { padding-top: 0; }
+.pick .rank { color: var(--amber); font-weight: 600; }

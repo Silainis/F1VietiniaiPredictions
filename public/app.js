@@ -670,19 +670,109 @@ function paintSlots(detail) {
     <div class="slots">${sel.dnfs.map((id, i) => slotButton('dnf', 'DNF', id, detail, i)).join('')}</div>`;
 }
 
-function openPicker(slot) {
+// ---------------------------------------------------------- driver picker
+// Sort options; the choice is remembered in this browser. Championship orders put the leader first;
+// drivers without a result in that championship (rookies, reserves) come last, in name order.
+const PICK_SORTS = [
+  ['team', 'Team (A-Z)'],
+  ['driver', 'Driver (A-Z)'],
+  ['team-last', "Last season's team championship"],
+  ['driver-last', "Last season's driver championship"],
+  ['driver-now', "This season's driver championship"],
+];
+const getPickSort = () => { try { return localStorage.getItem('pickSort') || 'team'; } catch { return 'team'; } };
+const setPickSort = (v) => { try { localStorage.setItem('pickSort', v); } catch { /* private mode */ } };
+
+// Team names differ between sources and seasons (Kick Sauber became Audi, "RB F1 Team" is Racing Bulls),
+// so they are compared through a short key.
+function teamKey(name) {
+  const n = plain(name).replace(/[^a-z]/g, '');
+  const rules = [['redbull', 'redbull'], ['bulls', 'rb'], ['alphatauri', 'rb'], ['visacash', 'rb'], ['sauber', 'audi'], ['audi', 'audi'], ['alfaromeo', 'audi'],
+    ['haas', 'haas'], ['alpine', 'alpine'], ['aston', 'aston'], ['williams', 'williams'], ['mercedes', 'mercedes'], ['ferrari', 'ferrari'], ['mclaren', 'mclaren'], ['cadillac', 'cadillac']];
+  if (n === 'rb' || n.startsWith('rbf')) return 'rb'; // "RB F1 Team"
+  const hit = rules.find(([k]) => n.includes(k));
+  return hit ? hit[1] : n;
+}
+const lastName = (name) => plain(String(name || '').split(' ').slice(-1)[0]);
+
+async function loadStandings() {
+  if (!state.standings) {
+    try { state.standings = await api('/standings'); } catch { state.standings = { last: { drivers: [], teams: [] }, current: { drivers: [], teams: [] } }; }
+  }
+  return state.standings;
+}
+
+// -> [{ header, drivers: [{ d, note }] }]  (one group without a header for the driver orders)
+function sortedDrivers(mode) {
+  const list = [...(state.drivers || [])];
+  const st = state.standings || { last: { drivers: [], teams: [] }, current: { drivers: [], teams: [] } };
+  const byName = (a, b) => lastName(a.name).localeCompare(lastName(b.name)) || a.name.localeCompare(b.name);
+  const rankIn = (rows) => { const m = new Map(rows.filter((r) => r.code).map((r) => [r.code, r])); return (d) => m.get(d.code) || null; };
+  const pts = (r) => `P${r.position} · ${r.points} pt${r.points === 1 ? '' : 's'}`;
+
+  if (mode === 'driver') return [{ drivers: list.sort(byName).map((d) => ({ d })) }];
+  if (mode === 'driver-last' || mode === 'driver-now') {
+    const table = mode === 'driver-last' ? st.last : st.current;
+    const rank = rankIn(table.drivers);
+    list.sort((a, b) => (rank(a)?.position || 999) - (rank(b)?.position || 999) || byName(a, b));
+    return [{ drivers: list.map((d) => ({ d, note: rank(d) ? pts(rank(d)) : `not in the ${table.season} standings` })) }];
+  }
+  // team groups
+  const teams = new Map();
+  for (const d of list) {
+    const k = teamKey(d.team);
+    if (!teams.has(k)) teams.set(k, { name: d.team || 'No team', drivers: [] });
+    teams.get(k).drivers.push(d);
+  }
+  let groups = [...teams.entries()].map(([k, g]) => ({ key: k, ...g }));
+  if (mode === 'team-last') {
+    const teamRank = new Map(st.last.teams.map((t) => [teamKey(t.name), t]));
+    const drvRank = rankIn(st.last.drivers);
+    groups.sort((a, b) => (teamRank.get(a.key)?.position || 99) - (teamRank.get(b.key)?.position || 99) || a.name.localeCompare(b.name));
+    return groups.map((g) => {
+      const t = teamRank.get(g.key);
+      g.drivers.sort((a, b) => (drvRank(a)?.position || 999) - (drvRank(b)?.position || 999) || byName(a, b));
+      return { header: g.name, sub: t ? `${pts(t)} in ${st.last.season}` : `new team / not ranked in ${st.last.season}`, drivers: g.drivers.map((d) => ({ d, note: drvRank(d) ? pts(drvRank(d)) : '' })) };
+    });
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
+  return groups.map((g) => ({ header: g.name, drivers: g.drivers.sort(byName).map((d) => ({ d })) }));
+}
+
+function pickerGrid(slot, mode) {
   const used = new Set([...SLOTS.map((k) => sel[k]), ...sel.dnfs].filter(Boolean));
   const current = slot.startsWith('dnf') ? sel.dnfs[Number(slot.slice(3))] : sel[slot];
+  const card = ({ d, note }) => {
+    const taken = used.has(d.driver_id) && d.driver_id !== current;
+    return `<button class="slot pick" data-act="choose" data-slot="${slot}" data-id="${esc(d.driver_id)}" style="${taken ? 'opacity:.4' : ''}" title="${taken ? 'Already picked: choosing again moves them here' : ''}">
+      ${avatar(d, 64)}<b>${esc(d.name)}</b><small>${esc(d.team || '')}${d.number ? ' · #' + esc(d.number) : ''}</small>${note ? `<small class="rank">${esc(note)}</small>` : ''}</button>`;
+  };
+  return sortedDrivers(mode).map((g) => `${g.header ? `<div class="pick-head"><b>${esc(g.header)}</b>${g.sub ? ` <span class="muted small">${esc(g.sub)}</span>` : ''}</div>` : ''}${g.drivers.map(card).join('')}`).join('');
+}
+
+function openPicker(slot) {
+  const current = slot.startsWith('dnf') ? sel.dnfs[Number(slot.slice(3))] : sel[slot];
   const title = slot.startsWith('dnf') ? 'Pick a driver who will not finish' : `Who finishes ${slot.toUpperCase()}?`;
+  const mode = getPickSort();
   const modal = document.createElement('div');
   modal.className = 'modal';
   modal.innerHTML = `<div class="sheet"><div class="row between"><h2>${title}</h2><button data-act="close-modal">Close</button></div>
-    <div class="pick-grid" style="margin-top:12px">
-    ${state.drivers.map((d) => `<button class="slot pick" data-act="choose" data-slot="${slot}" data-id="${esc(d.driver_id)}" style="${used.has(d.driver_id) && d.driver_id !== current ? 'opacity:.4' : ''}" title="${used.has(d.driver_id) && d.driver_id !== current ? 'Already picked: choosing again moves them here' : ''}">
-      ${avatar(d, 64)}<b>${esc(d.name)}</b><small>${esc(d.team || '')}${d.number ? ' · #' + esc(d.number) : ''}</small></button>`).join('')}
-    </div>${current ? `<p><button class="ghost danger" data-act="choose" data-slot="${slot}" data-id="">Clear this pick</button></p>` : ''}</div>`;
+    <div class="row" style="margin-top:8px"><label for="pick-sort" style="margin:0">Sort by</label>
+      <select id="pick-sort" style="width:auto;flex:1;max-width:340px">${PICK_SORTS.map(([v, l]) => `<option value="${v}" ${v === mode ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+    <div class="pick-grid" id="pick-grid" style="margin-top:12px">${pickerGrid(slot, mode)}</div>
+    ${current ? `<p><button class="ghost danger" data-act="choose" data-slot="${slot}" data-id="">Clear this pick</button></p>` : ''}</div>`;
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  const redraw = async (m) => {
+    const grid = modal.querySelector('#pick-grid');
+    if (m !== 'team' && m !== 'driver' && !state.standings) {
+      grid.innerHTML = '<p class="muted">Loading standings…</p>';
+      await loadStandings();
+    }
+    grid.innerHTML = pickerGrid(slot, m);
+  };
+  modal.querySelector('#pick-sort').addEventListener('change', (e) => { setPickSort(e.target.value); redraw(e.target.value); });
   document.body.appendChild(modal);
+  if (mode !== 'team' && mode !== 'driver' && !state.standings) redraw(mode);
 }
 
 function resultsPanel(results) {

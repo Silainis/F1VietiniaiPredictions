@@ -8,6 +8,7 @@
 import { f1PhotoFor } from './f1photos.js';
 import { f1TrackFor } from './f1tracks.js';
 import { Budget, syncQualifying } from './insights.js';
+import { syncStandings } from './standings.js';
 
 const UA = 'f1-vietiniai-predictions/1.0 (https://f1-vietiniai-predictions.f1vietiniai.workers.dev)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -202,6 +203,7 @@ export async function syncAll(env, { extras = true } = {}) {
   try { out.f1photos = await applyF1Photos(env); } catch (e) { out.f1photosError = e.message; }
   if (extras) {
     try { out.qualifying = await syncQualifying(env, budget); } catch (e) { out.qualifyingError = e.message; }
+    try { out.standings = await syncStandings(env, budget); } catch (e) { out.standingsError = e.message; }
   }
   try { out.images = await syncImages(env, Math.min(10, budget.left)); } catch (e) { out.imagesError = e.message; }
   return out;

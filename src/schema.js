@@ -111,6 +111,18 @@ export const SCHEMA = [
     circuit_id TEXT PRIMARY KEY,
     podiums_at INTEGER
   )`,
+  // Championship standings (formula1.com) used to sort the driver picker; see src/standings.js.
+  `CREATE TABLE IF NOT EXISTS standings (
+    season INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    code TEXT,
+    name TEXT,
+    team TEXT,
+    points REAL,
+    fetched_at INTEGER,
+    PRIMARY KEY (season, kind, position)
+  )`,
   // What the last scheduled syncs did (kept short), to see from the database whether imports work.
   `CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

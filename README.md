@@ -153,6 +153,7 @@ wrangler.jsonc     Cloudflare configuration (name, database, schedule)
 src/index.js       API: accounts, leagues, invites, predictions, approvals, scoreboard
 src/sync.js        Imports calendar, drivers, results, photos and track layouts
 src/insights.js    Qualifying results and track history shown on each race page
+src/standings.js   Championship standings (formula1.com) for sorting the driver picker
 src/f1photos.js    Driver photo addresses from formula1.com/en/drivers
 src/f1tracks.js    Circuit map addresses from the formula1.com race pages
 src/scoring.js     Scoring rules

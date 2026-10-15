@@ -30,6 +30,11 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
   the server validates and only fills empty rows. Cached forever in track_history.
 
+- Driver picker has a "Sort by" menu (remembered per browser): Team A-Z (default), Driver A-Z, last season's team
+  championship, last season's driver championship, this season's driver championship (leader first). Standings come from
+  formula1.com /en/results/<year>/drivers and /team (`src/standings.js`, table standings, GET /api/standings);
+  last season read once, current every 3 h by cron. Team names matched via teamKey() in public/app.js (Sauber=Audi, RB=Racing Bulls).
+
 ## Working notes
 - Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
 - Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, Wikipedia photos.
