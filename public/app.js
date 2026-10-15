@@ -935,7 +935,7 @@ async function playerView(apiPath) {
   if (c && c.races) {
     const bar = (label, n, of) => `<div class="acc"><span>${label}</span><div class="otbar wide"><i style="width:${of ? Math.round((n / of) * 100) : 0}%"></i></div><span class="num small">${n}/${of}</span></div>`;
     current = `<div class="panel"><h2>${c.season} in the app</h2>
-      <div class="facts"><span><b>${c.points}</b> points</span><span><b>${c.races}</b> races predicted</span><span><b>${c.avg}</b> per race</span>${c.best ? `<span>Best: <b>${c.best.pts}</b> at ${esc(c.best.race.replace(' Grand Prix', ''))}</span>` : ''}</div>
+      <div class="facts"><span><b>${c.points}</b> points</span><span><b>${c.races}</b> race${c.races === 1 ? '' : 's'} predicted</span><span><b>${c.avg}</b> per race</span>${c.best ? `<span>Best: <b>${c.best.pts}</b> at ${esc(c.best.race.replace(' Grand Prix', ''))}</span>` : ''}</div>
       <h3 class="avhead">Right picks</h3>
       ${['p1', 'p2', 'p3', 'p4', 'p5', 'p10'].map((k) => bar(k.toUpperCase(), c.hits[k], c.races)).join('')}
       ${bar('DNF', c.hits.dnf, c.hits.dnfPicked)}</div>`;

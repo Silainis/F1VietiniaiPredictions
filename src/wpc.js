@@ -92,17 +92,21 @@ export async function wpcSeasons(env, getScoreboard) {
       const reverse = new Map(Object.entries(PLAYERS).map(([n, u]) => [u, n]));
       const { results: users } = await env.DB.prepare(`SELECT id, username FROM users`).all();
       const uname = new Map(users.map((u) => [u.id, u.username]));
+      // the app started part-way through the season: leave out the races before anyone predicted
+      const first = sb.races.findIndex((_, i) => sb.board.some((b) => b.per_race[i]?.submitted));
+      const from = first < 0 ? sb.races.length : first;
+      const base = (b) => (from > 0 ? b.per_race[from - 1].total : 0);
       seasons.push({
         season: year,
-        races: sb.races.map((r) => r.name.replace(' Grand Prix', '')),
+        races: sb.races.slice(from).map((r) => r.name.replace(' Grand Prix', '')),
         complete: false,
         live: true,
         rows: rankRows(sb.board.map((b) => ({
           // a known player keeps the name from the old tables, so their seasons line up
           name: reverse.get(uname.get(b.id)) || b.name,
           user: { id: b.id, name: b.name, avatar: b.avatar },
-          totals: b.per_race.map((p) => p.total),
-          total: b.total,
+          totals: b.per_race.slice(from).map((p) => p.total - base(b)),
+          total: b.total - base(b),
         }))),
       });
     }
