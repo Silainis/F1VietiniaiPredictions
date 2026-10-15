@@ -291,7 +291,7 @@ async function handleApi(request, env, ctx, url) {
         : 0;
       return json({
         league: { id: league.id, name: league.name, owner_id: league.owner_id, invite_code: isAdmin ? league.invite_code : undefined },
-        members, role: me.role, pending,
+        members, role: me.role, pending, wpc: lid === WPC_LEAGUE_ID,
       });
     }
     if (method === 'DELETE') {

@@ -179,7 +179,7 @@ async function render() {
     if (path === '/wpc' || (m = path.match(/^\/wpc\/(\d{4})$/))) return await wpcView(m ? Number(m[1]) : null);
     if ((m = path.match(/^\/player\/(\d+)$/))) return await playerView(`/players/${m[1]}`);
     if ((m = path.match(/^\/player\/h\/(.+)$/))) return await playerView(`/players/h/${m[1]}`);
-    if ((m = path.match(/^\/league\/(\d+)(?:\/(races|scoreboard|members|approvals))?$/))) return await leagueView(Number(m[1]), m[2] || 'races');
+    if ((m = path.match(/^\/league\/(\d+)(?:\/(races|standings|scoreboard|members|approvals))?$/))) return await leagueView(Number(m[1]), m[2] === 'scoreboard' ? 'standings' : m[2] || 'races');
     app.innerHTML = shell(`<div class="panel"><h2>Page not found</h2><a href="/" data-link>Back to home</a></div>`);
   } catch (e) {
     if (e.status === 401) { state.me = null; return authView(); }
@@ -317,17 +317,19 @@ function startCountdown(id, ts, prefix = '') {
 async function leagueView(id, tab) {
   const [info] = await Promise.all([api('/leagues/' + id), loadRaces()]);
   const isAdmin = info.role === 'admin';
-  const tabs = [['races', 'Races'], ['scoreboard', 'Scoreboard'], ['members', 'Members']];
+  // The Vietiniai league's standings are the WPC page (same championship), other leagues keep their own.
+  if (tab === 'standings' && info.wpc) { history.replaceState({}, '', '/wpc'); return wpcView(null); }
+  const tabs = [['races', 'Races'], ['standings', 'Standings'], ['members', 'Members']];
   if (isAdmin) tabs.push(['approvals', `Approvals${info.pending ? ` <span class="badge">${info.pending}</span>` : ''}`]);
   if (tab === 'approvals' && !isAdmin) tab = 'races';
   let content = '';
   if (tab === 'races') content = await racesTab(id);
-  if (tab === 'scoreboard') content = await scoreboardTab(id);
+  if (tab === 'standings') content = await scoreboardTab(id);
   if (tab === 'members') content = membersTab(info);
   if (tab === 'approvals') content = await approvalsTab(id);
   app.innerHTML = shell(`
     <div class="row between"><h1>${esc(info.league.name)}</h1><a class="small muted" href="/" data-link>← All leagues</a></div>
-    <nav class="tabs">${tabs.map(([k, label]) => `<a href="/league/${id}/${k}" data-link class="${k === tab ? 'on' : ''}">${label}</a>`).join('')}</nav>
+    <nav class="tabs">${tabs.map(([k, label]) => `<a href="${k === 'standings' && info.wpc ? '/wpc' : `/league/${id}/${k}`}" data-link class="${k === tab ? 'on' : ''}">${label}${k === 'standings' && info.wpc ? ` ${cupSvg('gold', 14)}` : ''}</a>`).join('')}</nav>
     ${content}`);
   if (tab === 'races') {
     const next = state.races.find((r) => r.race_ts > nowTs());
@@ -408,7 +410,7 @@ async function approvalsTab(id) {
 // ------------------------------------------------------------- scoreboard
 async function scoreboardTab(id) {
   const { races, board } = await api(`/leagues/${id}/scoreboard`);
-  if (!races.length) return `<div class="panel muted">No race has been scored yet. The scoreboard fills in automatically after the first Grand Prix.</div>`;
+  if (!races.length) return `<div class="panel muted">No race has been scored yet. The standings fill in automatically after the first Grand Prix.</div>`;
   const color = (i) => COLORS[i % COLORS.length];
   const standings = `<div class="panel flush"><div class="scroll"><table><thead><tr><th>#</th><th>Player</th><th class="r">Points</th><th class="r">Last race</th></tr></thead><tbody>
     ${board.map((b, i) => { const last = b.per_race[b.per_race.length - 1]; return `<tr class="${i === 0 ? 'lead' : ''}">
@@ -974,7 +976,7 @@ function playerName(r, size = 28) {
 }
 
 async function wpcView(year) {
-  const { seasons, alltime } = await api('/wpc');
+  const { seasons, alltime, league_id } = await api('/wpc');
   const pick = seasons.find((s) => s.season === year) || seasons[seasons.length - 1];
   const finished = seasons.filter((s) => !s.live).reverse();
   const hall = finished.map((s) => `<div class="hof">
@@ -997,14 +999,14 @@ async function wpcView(year) {
       <td><span class="who-row"><span class="dot" style="background:${color(i)}"></span><a class="who-row plain" href="${playerHref(r)}" data-link>${formAvatar(r.user || { name: r.name }, 28, board[i].form)}<span>${esc(r.name)}</span></a></span></td><td class="r num"><b>${r.total}</b></td></tr>`).join('')}
     </tbody></table></div></div>`;
   app.innerHTML = shell(`
-    <div class="row between"><h1>${cupSvg('gold', 30)} World Prediction Champion</h1><a class="small muted" href="/" data-link>← Home</a></div>
+    <div class="row between"><h1>${cupSvg('gold', 30)} World Prediction Champion</h1><span class="row"><a class="small muted" href="/league/${league_id}" data-link>← League races</a><a class="small muted" href="/" data-link>Home</a></span></div>
     <p class="muted">Our own championship: everybody's prediction points over a whole Formula 1 season.</p>
     <h2>Hall of fame</h2><div class="hof-grid">${hall}</div>
     <h2 style="margin-top:20px">All-time</h2>${allTable}
     <h2 style="margin-top:20px">Seasons</h2>
     <nav class="tabs">${seasons.map((s) => `<a href="/wpc/${s.season}" data-link class="${s === pick ? 'on' : ''}">${s.season}${s.live ? ' (now)' : ''}</a>`).join('')}</nav>
     ${pick.live ? `<p class="muted small">This season comes from the app league. It counts the races scored in the app so far.</p>` : ''}
-    ${standings}${races.length ? trendChart(races, board, color) : ''}`);
+    ${standings}${races.length ? trendChart(races, board, color) + perRaceTable(races, board.map((b) => ({ ...b, per_race: b.per_race.map((p) => ({ ...p, submitted: true })) }))) : ''}`);
 }
 
 async function playerView(apiPath) {

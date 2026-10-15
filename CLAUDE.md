@@ -45,7 +45,8 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   Spreadsheet uses the same scoring as the app (confirmed by owner); for rounds the sheet covers, the sheet wins.
   PLAYERS maps old table names to usernames (Šilainis=silainis, Agnė=agny, Martynas=martynas, Darius=muerto);
   Vakaris, Eglė, Karolis, Justas, Andrius, Ramūnas, Veronika have no account yet: add them to PLAYERS when they sign up.
-  Pages: /wpc (hall of fame, all-time, seasons + chart), /player/:id and /player/h/:name (trophies gold/silver/bronze
+  League tab "Scoreboard" is now "Standings"; for the WPC league it opens /wpc (old /scoreboard URLs redirect), other leagues keep
+  their own standings tab. Pages: /wpc (hall of fame, all-time, seasons + chart + per-race table), /player/:id and /player/h/:name (trophies gold/silver/bronze
   per WPC year, highlights: best race, 3+ streaks, scoring streak, races led, droughts; season table; current pick accuracy).
 
 - Charts: x-axis uses 3-letter race codes (raceCode in app.js), legend shows player avatars. Form (formOf): last 3 races vs own
