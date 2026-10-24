@@ -350,16 +350,30 @@ async function racesTab(id) {
     if (s === 'late_rejected') return '<span class="chip red">Late entry rejected</span>';
     return r.race_ts > nowTs() ? '<span class="chip">Not predicted yet</span>' : '<span class="chip red">Missed</span>';
   };
-  return `<div class="panel flush">${state.races.map((r) => {
+  const row = (r) => {
     const status = r.has_results ? '<span class="chip">Final</span>'
       : r.race_ts <= nowTs() ? '<span class="chip amber">Locked · awaiting results</span>'
       : `<span class="chip ${next && next.round === r.round ? 'amber' : ''}" ${next && next.round === r.round ? `id="cd-${r.round}"` : ''}>Open</span>`;
-    return `<a class="race" href="/league/${id}/race/${r.round}" data-link>
+    return `<a class="race${next && next.round === r.round ? ' next' : ''}" href="/league/${id}/race/${r.round}" data-link>
       <div class="rnd">${r.round}</div>${trackImg(r)}
       <div><div class="name">${esc(r.name)}</div><div class="muted small">${esc(r.locality)}, ${esc(r.country)} · ${fmtDate(r.race_ts)}</div></div>
       <div class="side">${status}${badge(r)}</div></a>`;
-  }).join('')}</div>`;
+  };
+  // Races still to come (and one that has started but has no results yet) are listed first, the next
+  // race on top. Finished races sit in a folded "Past races" list (newest first), built only when opened.
+  const past = state.races.filter((r) => r.has_results).sort((a, b) => b.round - a.round);
+  const upcoming = state.races.filter((r) => !r.has_results);
+  pastRaceRows = () => past.map(row).join('');
+  let open = false;
+  try { open = sessionStorage.getItem('past-races-' + id) === '1'; } catch { /* ignore */ }
+  const missed = past.filter((r) => !mine[r.round]).length;
+  return `${upcoming.length ? `<div class="panel flush">${upcoming.map(row).join('')}</div>` : '<div class="panel"><p class="muted">The season is over. All races are under Past races.</p></div>'}
+    ${past.length ? `<div class="panel flush past-races">
+      <button class="past-toggle" data-act="past-races" data-id="${id}" aria-expanded="${open}">
+        <span><b>Past races</b> <span class="muted small">${past.length} finished${missed ? ` · ${missed} missed` : ''}</span></span><span class="caret">${open ? '▴' : '▾'}</span></button>
+      <div id="past-list" ${open ? '' : 'hidden'}>${open ? pastRaceRows() : ''}</div></div>` : ''}`;
 }
+let pastRaceRows = () => '';
 
 function membersTab(info) {
   const isAdmin = info.role === 'admin';
@@ -1074,6 +1088,15 @@ function sparkline(per) {
 
 // -------------------------------------------------------- click handling
 const actions = {
+  'past-races'(btn) {
+    const list = document.getElementById('past-list');
+    const open = list.hidden;
+    if (open && !list.innerHTML) list.innerHTML = pastRaceRows();
+    list.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.querySelector('.caret').textContent = open ? '▴' : '▾';
+    try { sessionStorage.setItem('past-races-' + btn.dataset.id, open ? '1' : '0'); } catch { /* ignore */ }
+  },
   authmode(el) { authMode = el.dataset.mode; location.pathname.startsWith('/join/') ? render() : authView(); },
   async logout() { await api('/logout', { method: 'POST' }); state.me = null; go('/'); },
   async bell() {

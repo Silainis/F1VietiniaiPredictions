@@ -34,6 +34,9 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
   the server validates and only fills empty rows. Cached forever in track_history.
 
+- League Races tab: races still to come first (next race on top, highlighted; a started race without results stays here),
+  finished races folded under "Past races" (newest first, rows built only when opened; open/closed remembered per
+  league in sessionStorage).
 - Race page: Qualifying and Analytics are two tabs (Qualifying default, choice remembered per browser tab via sessionStorage).
   Analytics = best lap per driver in FP1-FP3 (`src/practice.js`, table practice, `GET /api/races/:round/practice`), read from
   formula1.com /practice/<n> (leader's time + gaps). Session start times come from the Jolpica calendar (races.fp1_ts..fp3_ts,

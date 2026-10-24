@@ -323,3 +323,9 @@ b.podium { color: var(--amber); }
 }
 table.quali.hist td.r b { color: var(--text); }
 table.quali.hist td.r b.podium { color: var(--amber); }
+
+/* races list: upcoming first, finished races folded */
+.race.next { background: rgba(225, 6, 0, .06); }
+.past-toggle { width: 100%; justify-content: space-between; border: 0; border-radius: var(--radius); background: transparent; padding: 14px 16px; }
+.past-toggle .caret { color: var(--muted); }
+#past-list { border-top: 1px solid var(--line); }
