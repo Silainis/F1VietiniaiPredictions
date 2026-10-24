@@ -11,7 +11,7 @@ import { getPractice } from './practice.js';
 import { WPC_LEAGUE_ID, PLAYERS, wpcSeasons, allTime, seasonStats } from './wpc.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
-let assetsApplied = null;
+let assetsApplied = false;
 let standingsTried = 0;
 const SESSION_DAYS = 30;
 const PICK_KEYS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p10'];
@@ -22,8 +22,10 @@ export default {
     try {
       await ensureSchema(env);
       // Once per worker start: make sure stored drivers and races use their formula1.com images.
-      assetsApplied ||= Promise.all([applyF1Photos(env), applyF1Tracks(env)]).catch((e) => { assetsApplied = null; console.error(e); });
-      await assetsApplied;
+      // (each request runs it until one has finished: see ensureSchema for why a promise is not shared)
+      if (!assetsApplied) {
+        try { await Promise.all([applyF1Photos(env), applyF1Tracks(env)]); assetsApplied = true; } catch (e) { console.error(e); }
+      }
       if (url.pathname.startsWith('/api/')) return await handleApi(request, env, ctx, url);
       return env.ASSETS.fetch(request);
     } catch (e) {

@@ -79,4 +79,6 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   if race results stop arriving, a formula1.com race-result fallback may be needed.
 - Photo/track/team lists need re-checking at the start of each season (README sections 7 and 8).
 - Tests used so far were local scripts (mock Jolpica/formula1.com/OpenF1, D1 shim on node:sqlite, Playwright); they are not in the repo.
+- Never share an in-flight promise between requests at module level (ensureSchema / assetsApplied use done-flags):
+  a cancelled request's D1 calls never finish and every later request in that isolate hangs (app stuck on "Loading…", 2026-10-24).
 - Fixed: on screens under 1000px the main column could grow past the screen (grid 1fr -> minmax(0, 1fr)).

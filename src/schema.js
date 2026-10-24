@@ -157,38 +157,35 @@ export const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_pred_league_round ON predictions (league_id, round)`,
 ];
 
-async function addColumns(env, statements) {
-  for (const sql of statements) await env.DB.prepare(sql).run().catch(() => {});
-}
+// Columns added after the first release, per table.
+const COLUMNS = {
+  users: { favorite_team: 'TEXT', username: 'TEXT', avatar: 'TEXT' },
+  races: { quali_ts: 'INTEGER', f1_meeting_id: 'TEXT', f1_slug: 'TEXT', quali_checked_at: 'INTEGER', fp1_ts: 'INTEGER', fp2_ts: 'INTEGER', fp3_ts: 'INTEGER', sprint: 'INTEGER', practice_checked_at: 'INTEGER' },
+  qualifying: { grid: 'TEXT' },
+};
 
-let ready = null;
-export function ensureSchema(env) {
-  if (!ready) {
-    ready = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)))
-      // columns added after the first release; the error when the column already exists is expected
-      .then(() => addColumns(env, [
-        `ALTER TABLE users ADD COLUMN favorite_team TEXT`,
-        `ALTER TABLE races ADD COLUMN quali_ts INTEGER`,
-        `ALTER TABLE races ADD COLUMN f1_meeting_id TEXT`,
-        `ALTER TABLE races ADD COLUMN f1_slug TEXT`,
-        `ALTER TABLE races ADD COLUMN quali_checked_at INTEGER`,
-        `ALTER TABLE qualifying ADD COLUMN grid TEXT`,
-        `ALTER TABLE users ADD COLUMN username TEXT`,
-        `ALTER TABLE users ADD COLUMN avatar TEXT`,
-        `ALTER TABLE races ADD COLUMN fp1_ts INTEGER`,
-        `ALTER TABLE races ADD COLUMN fp2_ts INTEGER`,
-        `ALTER TABLE races ADD COLUMN fp3_ts INTEGER`,
-        `ALTER TABLE races ADD COLUMN sprint INTEGER`,
-        `ALTER TABLE races ADD COLUMN practice_checked_at INTEGER`,
-        // accounts made with an email before usernames existed: their name becomes the username
-        // (an id is added if two names are the same); they can still log in with their email too
-        `UPDATE users SET username = lower(name) || CASE WHEN EXISTS (SELECT 1 FROM users u2 WHERE lower(u2.name) = lower(users.name) AND u2.id < users.id) THEN id ELSE '' END WHERE username IS NULL`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
-      ]))
-      .catch((e) => {
-      ready = null;
-      throw e;
-    });
-  }
-  return ready;
+// Runs once per Worker instance. Each request does the work itself until one has finished it: a promise
+// started by one request must not be awaited by another (if the first request is cancelled, for example
+// because the visitor closed the page, its database calls never finish and every later request would
+// wait forever; that left the whole app stuck on "Loading…" on 2026-10-24).
+let ready = false;
+export async function ensureSchema(env) {
+  if (ready) return;
+  await env.DB.batch(SCHEMA.map((sql) => env.DB.prepare(sql)));
+  const tables = Object.keys(COLUMNS);
+  const info = await env.DB.batch(tables.map((t) => env.DB.prepare(`SELECT name FROM pragma_table_info('${t}')`)));
+  const missing = [];
+  tables.forEach((t, i) => {
+    const have = new Set((info[i].results || []).map((r) => r.name));
+    for (const [col, type] of Object.entries(COLUMNS[t])) if (!have.has(col)) missing.push(`ALTER TABLE ${t} ADD COLUMN ${col} ${type}`);
+  });
+  // another request may add the same column at the same moment: that error is expected
+  for (const sql of missing) await env.DB.prepare(sql).run().catch(() => {});
+  await env.DB.batch([
+    // accounts made with an email before usernames existed: their name becomes the username
+    // (an id is added if two names are the same); they can still log in with their email too
+    env.DB.prepare(`UPDATE users SET username = lower(name) || CASE WHEN EXISTS (SELECT 1 FROM users u2 WHERE lower(u2.name) = lower(users.name) AND u2.id < users.id) THEN id ELSE '' END WHERE username IS NULL`),
+    env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`),
+  ]);
+  ready = true;
 }
