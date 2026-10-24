@@ -8,6 +8,7 @@
 import { f1PhotoFor } from './f1photos.js';
 import { f1TrackFor } from './f1tracks.js';
 import { Budget, syncQualifying } from './insights.js';
+import { syncPractice } from './practice.js';
 import { syncStandings } from './standings.js';
 
 const UA = 'f1-vietiniai-predictions/1.0 (https://f1-vietiniai-predictions.f1vietiniai.workers.dev)';
@@ -30,16 +31,19 @@ async function getJson(env, url) {
   }
 }
 
+// Start time of a weekend session from the Jolpica calendar ({ date, time }), or null.
+const sessionTs = (s) => (s?.date ? Date.parse(`${s.date}T${s.time || '12:00:00Z'}`) : null);
+
 export async function syncSchedule(env) {
   const data = await getJson(env, `${base(env)}/${season(env)}.json?limit=100`);
   const races = data.MRData.RaceTable.Races || [];
   const stmt = env.DB.prepare(
-    `INSERT INTO races (round, name, circuit_id, circuit_name, locality, country, race_ts, wiki_url, circuit_wiki_url, quali_ts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO races (round, name, circuit_id, circuit_name, locality, country, race_ts, wiki_url, circuit_wiki_url, quali_ts, fp1_ts, fp2_ts, fp3_ts, sprint)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(round) DO UPDATE SET name=excluded.name, circuit_id=excluded.circuit_id,
        circuit_name=excluded.circuit_name, locality=excluded.locality, country=excluded.country,
        race_ts=excluded.race_ts, wiki_url=excluded.wiki_url, circuit_wiki_url=excluded.circuit_wiki_url,
-       quali_ts=excluded.quali_ts`
+       quali_ts=excluded.quali_ts, fp1_ts=excluded.fp1_ts, fp2_ts=excluded.fp2_ts, fp3_ts=excluded.fp3_ts, sprint=excluded.sprint`
   );
   if (races.length) {
     await env.DB.batch(
@@ -54,7 +58,9 @@ export async function syncSchedule(env) {
           Date.parse(`${r.date}T${r.time || '13:00:00Z'}`),
           r.url || null,
           r.Circuit.url || null,
-          r.Qualifying?.date ? Date.parse(`${r.Qualifying.date}T${r.Qualifying.time || '14:00:00Z'}`) : null
+          r.Qualifying?.date ? Date.parse(`${r.Qualifying.date}T${r.Qualifying.time || '14:00:00Z'}`) : null,
+          sessionTs(r.FirstPractice), sessionTs(r.SecondPractice), sessionTs(r.ThirdPractice),
+          r.Sprint || r.SprintQualifying ? 1 : 0
         )
       )
     );
@@ -203,6 +209,7 @@ export async function syncAll(env, { extras = true } = {}) {
   try { out.f1photos = await applyF1Photos(env); } catch (e) { out.f1photosError = e.message; }
   if (extras) {
     try { out.qualifying = await syncQualifying(env, budget); } catch (e) { out.qualifyingError = e.message; }
+    try { out.practice = await syncPractice(env, budget); } catch (e) { out.practiceError = e.message; }
     try { out.standings = await syncStandings(env, budget); } catch (e) { out.standingsError = e.message; }
   }
   try { out.images = await syncImages(env, Math.min(10, budget.left)); } catch (e) { out.imagesError = e.message; }

@@ -123,6 +123,23 @@ export const SCHEMA = [
     fetched_at INTEGER,
     PRIMARY KEY (season, kind, position)
   )`,
+  // Best lap per driver in each practice session (formula1.com results pages, see src/practice.js).
+  `CREATE TABLE IF NOT EXISTS practice (
+    round INTEGER NOT NULL,
+    session INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    pos_text TEXT,
+    number TEXT,
+    code TEXT,
+    driver_id TEXT,
+    name TEXT,
+    team TEXT,
+    time TEXT,
+    ms INTEGER,
+    laps INTEGER,
+    fetched_at INTEGER,
+    PRIMARY KEY (round, session, position)
+  )`,
   // Uploaded profile pictures (small JPEG/WebP made in the browser, stored as base64).
   `CREATE TABLE IF NOT EXISTS avatars (
     user_id INTEGER PRIMARY KEY,
@@ -158,6 +175,11 @@ export function ensureSchema(env) {
         `ALTER TABLE qualifying ADD COLUMN grid TEXT`,
         `ALTER TABLE users ADD COLUMN username TEXT`,
         `ALTER TABLE users ADD COLUMN avatar TEXT`,
+        `ALTER TABLE races ADD COLUMN fp1_ts INTEGER`,
+        `ALTER TABLE races ADD COLUMN fp2_ts INTEGER`,
+        `ALTER TABLE races ADD COLUMN fp3_ts INTEGER`,
+        `ALTER TABLE races ADD COLUMN sprint INTEGER`,
+        `ALTER TABLE races ADD COLUMN practice_checked_at INTEGER`,
         // accounts made with an email before usernames existed: their name becomes the username
         // (an id is added if two names are the same); they can still log in with their email too
         `UPDATE users SET username = lower(name) || CASE WHEN EXISTS (SELECT 1 FROM users u2 WHERE lower(u2.name) = lower(users.name) AND u2.id < users.id) THEN id ELSE '' END WHERE username IS NULL`,

@@ -176,6 +176,7 @@ async function render() {
     if (state.me.must_change || path === '/account') return accountView();
     if (path === '/') return await homeView();
     if ((m = path.match(/^\/league\/(\d+)\/race\/(\d+)$/))) return await raceView(Number(m[1]), Number(m[2]));
+    if ((m = path.match(/^\/league\/(\d+)\/race\/(\d+)\/analysis$/))) return await analysisView(Number(m[1]), Number(m[2]));
     if (path === '/wpc' || (m = path.match(/^\/wpc\/(\d{4})$/))) return await wpcView(m ? Number(m[1]) : null);
     if ((m = path.match(/^\/player\/(\d+)$/))) return await playerView(`/players/${m[1]}`);
     if ((m = path.match(/^\/player\/h\/(.+)$/))) return await playerView(`/players/h/${m[1]}`);
@@ -546,7 +547,12 @@ async function loadInsights(round) {
   const el = document.getElementById('insights');
   if (!el || !raceCtx || raceCtx.round !== round) return; // the user moved on to another page
   if (!data) { el.innerHTML = '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>'; return; }
-  el.innerHTML = `<div id="quali-box">${qualiPanel(data.qualifying)}</div><div id="hist-box">${historyPanel(data.history)}</div>`;
+  // Qualifying (default) and Analytics (practice times + link to the driver analysis) share one spot.
+  let tab = 'quali';
+  try { if (sessionStorage.getItem('qa-tab') === 'analytics') tab = 'analytics'; } catch { /* ignore */ }
+  el.innerHTML = `<div class="seg qa-tabs"><button data-act="qa-tab" data-tab="quali" class="${tab === 'quali' ? 'on' : ''}">Qualifying</button><button data-act="qa-tab" data-tab="analytics" class="${tab === 'analytics' ? 'on' : ''}">Analytics</button></div>
+    <div id="quali-box" ${tab === 'quali' ? '' : 'hidden'}>${qualiPanel(data.qualifying)}</div><div id="analytics-box" ${tab === 'analytics' ? '' : 'hidden'}></div><div id="hist-box">${historyPanel(data.history)}</div>`;
+  if (tab === 'analytics') loadAnalyticsTab(raceCtx.lid, round);
   if (['loading', 'partial'].includes(data.history.status)) collectHistory(round, data.history);
   if (data.qualifying.live) watchQualifying(round);
 }

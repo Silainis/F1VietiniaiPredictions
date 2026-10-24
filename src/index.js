@@ -7,6 +7,7 @@ import { saveAvatar, avatarResponse } from './avatars.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
 import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { syncStandings, getStandings } from './standings.js';
+import { getPractice } from './practice.js';
 import { WPC_LEAGUE_ID, PLAYERS, wpcSeasons, allTime, seasonStats } from './wpc.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
@@ -229,6 +230,22 @@ async function handleApi(request, env, ctx, url) {
     const data = await getRaceInsights(env, Number(m[1]));
     if (!data) throw new HttpError(404, 'Race not found.');
     return json(data);
+  }
+
+  // best practice lap per driver in FP1-FP3 (Analytics tab of the race page)
+  if ((m = path.match(/^\/api\/races\/(\d+)\/practice$/)) && method === 'GET') {
+    const data = await getPractice(env, Number(m[1]));
+    if (!data) throw new HttpError(404, 'Race not found.');
+    return json(data);
+  }
+
+  // everything about this season the driver analysis page needs, in one answer
+  if (method === 'GET' && path === '/api/season') return json(await seasonData(env));
+
+  // OpenF1 (lap by lap times and car telemetry) passed through and cached for 5 minutes, used by the
+  // driver analysis page when the browser cannot reach api.openf1.org itself.
+  if ((m = path.match(/^\/api\/openf1\/(sessions|laps|car_data|stints|drivers|meetings|location|weather)$/)) && method === 'GET') {
+    return openF1(env, ctx, m[1], url.search);
   }
 
   // track history collected by the browser (see collectHistory in public/app.js)
@@ -523,6 +540,31 @@ async function playerProfile(env, key) {
     history,
     current,
   };
+}
+
+async function seasonData(env) {
+  const [races, results, quali, practice, drivers] = await Promise.all([
+    env.DB.prepare(`SELECT round, name, circuit_id, country, race_ts FROM races ORDER BY round`).all(),
+    env.DB.prepare(`SELECT round, driver_id, position, pos_text, status FROM results ORDER BY round, position`).all(),
+    env.DB.prepare(`SELECT round, driver_id, code, position FROM qualifying ORDER BY round, position`).all(),
+    env.DB.prepare(`SELECT round, session, driver_id, code, position, ms FROM practice ORDER BY round, session, position`).all(),
+    listDrivers(env, true),
+  ]);
+  return { season: Number(env.SEASON || new Date().getUTCFullYear()), races: races.results, results: results.results, qualifying: quali.results, practice: practice.results, drivers, server_time: now() };
+}
+
+const OPENF1 = 'https://api.openf1.org/v1';
+async function openF1(env, ctx, endpoint, search) {
+  const target = `${env.OPENF1_BASE || OPENF1}/${endpoint}${search}`;
+  const cache = caches.default;
+  const key = new Request(target);
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const res = await fetch(target, { headers: { accept: 'application/json', 'User-Agent': 'f1-vietiniai-predictions/1.0' } });
+  if (!res.ok) return json({ error: `OpenF1 answered HTTP ${res.status}` }, res.status === 429 ? 429 : 502);
+  const out = new Response(res.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+  ctx.waitUntil(cache.put(key, out.clone()));
+  return out;
 }
 
 async function listDrivers(env, includeAll = false) {

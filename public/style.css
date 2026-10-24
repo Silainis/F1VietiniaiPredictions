@@ -172,7 +172,7 @@ td.r, th.r { text-align: right; }
 .tph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--panel-2); }
 @media (max-width: 1000px) {
   .wrap.withside { max-width: 980px; }
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
   .teamside { position: static; }
 }
 
@@ -266,3 +266,60 @@ table.riv th { color: var(--red); text-align: center; width: 60px; }
 table.riv td { min-width: 90px; }
 table.riv tr.same-pick td { color: var(--muted); }
 table.riv tr.diff-pick td { font-weight: 700; }
+
+/* race page: Qualifying / Analytics tabs, practice table */
+.qa-tabs { max-width: 320px; margin-bottom: 10px; }
+#quali-box[hidden], #analytics-box[hidden] { display: none; }
+table.prac td.r, table.laps td.r { color: var(--text); }
+table.prac td.pb { font-weight: 700; }
+table.prac td .small { font-weight: 400; }
+.facts a.chip { text-decoration: none; }
+table.quali td.fastest { color: #c58cff; font-weight: 700; }
+.gapbar { height: 4px; background: #262a33; border-radius: 3px; margin-top: 4px; min-width: 70px; }
+.gapbar i { display: block; height: 100%; border-radius: 3px; background: #6b7280; }
+.down { color: #ff7b72; font-weight: 700; }
+.btn.small, button.small { padding: 5px 11px; font-size: .85rem; }
+
+/* driver analysis page */
+.an-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-top: 8px; }
+.an-pick label { margin-top: 4px; }
+@media (max-width: 640px) { .an-pick { grid-template-columns: 1fr; gap: 0; } }
+.an-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.an-card { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--tc); border-radius: var(--radius); padding: 14px 16px; }
+.an-name { font-weight: 700; font-size: 1.1rem; }
+.an-name .dot { margin-right: 6px; }
+.an-kpis, .an-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin: 12px 0 8px; }
+.an-kpis div, .an-stats div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.an-kpis b, .an-stats b { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.an-kpis span, .an-stats span { color: var(--muted); font-size: .78rem; }
+.an-stats em { display: block; color: var(--muted); font-size: .72rem; font-style: normal; }
+.tchip { display: inline-block; font-size: .75rem; padding: 1px 8px; border-radius: 999px; border-left: 4px solid var(--tc); background: var(--panel-2); color: var(--text); white-space: nowrap; }
+.an-tabs { max-width: 440px; }
+.an-tabs button.dim { opacity: .55; }
+.an-sub { margin-top: 16px; }
+.chart text.band { font-size: 11px; fill: #6b7280; }
+.chart text.star { font-size: 13px; fill: #c58cff; }
+.tel-label { color: var(--muted); font-size: .75rem; margin: -2px 0 6px 52px; }
+details.an-sub summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+table.laps tr.slow td { opacity: .5; }
+.h2h { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 14px; }
+.h2h div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.h2h b { font-size: 1.4rem; display: block; }
+.h2h span { color: var(--muted); font-size: .8rem; }
+.h2hbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 6px; background: #262a33; }
+.h2hbar i { display: block; height: 100%; }
+.dnfstrip { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
+.dnfcell { font-size: .7rem; padding: 3px 5px; border-radius: 5px; background: var(--green-soft); color: var(--green); font-weight: 700; letter-spacing: .02em; }
+.dnfcell.dnf, .dnfcell.dns { background: var(--red-soft); color: #ff7b72; }
+.dnfcell.dsq { background: var(--amber-soft); color: var(--amber); }
+.dnfcell.none { background: var(--panel-2); color: var(--muted); }
+.dnflist { margin: 6px 0; padding-left: 20px; }
+b.podium { color: var(--amber); }
+
+/* narrow phones: keep the header inside the screen */
+@media (max-width: 480px) {
+  .topbar { gap: 8px; }
+  .me-link > span:last-child { display: none; }
+}
+table.quali.hist td.r b { color: var(--text); }
+table.quali.hist td.r b.podium { color: var(--amber); }

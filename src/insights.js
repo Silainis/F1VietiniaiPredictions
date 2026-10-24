@@ -10,14 +10,14 @@
 // Track history (podium, lead changes and estimated overtakes of the last 5 editions at the circuit)
 // is collected from the Jolpica F1 API by the players' browsers and stored here; see below.
 
-const F1 = 'https://www.formula1.com';
+export const F1 = 'https://www.formula1.com';
 const UA = 'Mozilla/5.0 (compatible; f1-vietiniai-predictions/1.0; +https://f1vietiniaiprediction.f1vietiniai.workers.dev)';
 const HISTORY_YEARS = 5;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jolpica = (env) => env.JOLPICA_BASE || 'https://api.jolpi.ca/ergast/f1';
 const f1Base = (env) => env.F1_BASE || F1;
-const season = (env) => Number(env.SEASON || new Date().getUTCFullYear());
+export const season = (env) => Number(env.SEASON || new Date().getUTCFullYear());
 
 // Counts requests so one cron run stays under the Workers limit (50 on the free plan).
 export class Budget {
@@ -50,7 +50,7 @@ async function getJolpica(env, path) {
   }
 }
 
-async function getPage(env, path) {
+export async function getPage(env, path) {
   const res = await fetch(`${f1Base(env)}${path}`, { headers: { 'User-Agent': UA, accept: 'text/html' } });
   if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
   return res.text();
@@ -102,7 +102,7 @@ export async function syncMeetingIds(env, budget) {
 // Results table of a formula1.com page -> rows of cell texts. Only the <table> part is scanned, so
 // the rest of the (large) page costs almost no CPU. An empty list means nothing is published yet
 // (the page then shows "No results available").
-function tableRows(html, minCells) {
+export function tableRows(html, minCells) {
   const start = html.indexOf('<tbody');
   if (start < 0) return [];
   const body = html.slice(start, html.indexOf('</tbody>', start));
@@ -113,7 +113,7 @@ function tableRows(html, minCells) {
   }
   return rows;
 }
-const splitDriver = (cell) => {
+export const splitDriver = (cell) => {
   const m = cell.match(/([A-Z]{3})$/); // "Max Verstappen" + "VER" (the short code is shown on phones)
   return m ? { code: m[1], name: cell.slice(0, -3).trim() } : { code: null, name: cell };
 };
@@ -131,7 +131,7 @@ export function parseGrid(html) {
   return tableRows(html, 4).map((t) => ({ grid: t[0], number: t[1] || null, code: splitDriver(t[2]).code }));
 }
 
-const f1Path = (env, race, page) => `/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}/${page}`;
+export const f1Path = (env, race, page) => `/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}/${page}`;
 
 async function qualifyingFromJolpica(env, race) {
   const data = await getJolpica(env, `/${season(env)}/${race.round}/qualifying.json?limit=100`);

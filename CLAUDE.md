@@ -34,6 +34,21 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
   the server validates and only fills empty rows. Cached forever in track_history.
 
+- Race page: Qualifying and Analytics are two tabs (Qualifying default, choice remembered per browser tab via sessionStorage).
+  Analytics = best lap per driver in FP1-FP3 (`src/practice.js`, table practice, `GET /api/races/:round/practice`), read from
+  formula1.com /practice/<n> (leader's time + gaps). Session start times come from the Jolpica calendar (races.fp1_ts..fp3_ts,
+  races.sprint = only FP1). Cron reads finished sessions of the current weekend and back-fills one past race per run;
+  opening the tab re-checks at most once a minute (claim via races.practice_checked_at). "Driver analysis" button opens
+  /league/:lid/race/:round/analysis (`public/analysis.js`, URL keeps ?d=CODE&vs=CODE&s=1|2|3|all).
+- Driver analysis page: FP1/FP2/FP3/Combined tabs with lap-by-lap times (tyre colours, slow laps excluded), ideal lap,
+  improvement, long runs (race pace + tyre wear), fastest-lap telemetry (speed/throttle/brake + gap when comparing),
+  driver vs driver, season trend (finish/quali chart, regression trend, last 5, teammate), DNF analysis (game DNF rules:
+  R/N/W, warning on 2+ DNFs in last 5 or streak, field "most likely to retire"), history at the circuit with team per year.
+  Lap data and telemetry: OpenF1 (api.openf1.org, the feed FastF1 uses; FastF1 itself is Python and cannot run in the
+  Worker). Browser asks OpenF1 directly, falls back to `GET /api/openf1/<endpoint>` (cached 5 min). OpenF1 publishes a
+  session shortly after it ends (live data needs a paid OpenF1 account). Season numbers: `GET /api/season`.
+  Circuit history: Jolpica from the browser, cached in localStorage for a day.
+
 - Driver picker has a "Sort by" menu (remembered per browser): Team A-Z (default), Driver A-Z, last season's team
   championship, last season's driver championship, this season's driver championship (leader first). Standings come from
   formula1.com /en/results/<year>/drivers and /team (`src/standings.js`, table standings, GET /api/standings);
@@ -60,4 +75,5 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - Jolpica rate-limits the Worker (HTTP 429 seen on 2026-10-15, e.g. drivers.json). Watch sync_log in D1 (last 20 cron results);
   if race results stop arriving, a formula1.com race-result fallback may be needed.
 - Photo/track/team lists need re-checking at the start of each season (README sections 7 and 8).
-- Tests used so far were local scripts (mock Jolpica, D1 shim); they are not in the repo.
+- Tests used so far were local scripts (mock Jolpica/formula1.com/OpenF1, D1 shim on node:sqlite, Playwright); they are not in the repo.
+- Fixed: on screens under 1000px the main column could grow past the screen (grid 1fr -> minmax(0, 1fr)).
