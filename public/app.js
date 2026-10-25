@@ -547,7 +547,7 @@ async function raceView(lid, round) {
       ${isEditable ? `<p><button class="primary" data-act="save">${data.locked ? 'Send late prediction for approval' : 'Save prediction'}</button></p>` : ''}
     </div>
     <div id="insights"><div class="panel muted small">Loading qualifying and track history…</div></div>
-    ${results ? resultsPanel(results) : ''}
+    ${results ? resultsPanel(results, data.results_meta, round) : data.locked ? waitingResultsPanel(data.results_meta, round) : ''}
     ${data.locked ? `<div id="board-box">${predictionBoard(mine, others, missing, !!results, round)}</div>` : `<p class="muted small">Other players' predictions become visible when the race starts.</p>`}`);
   paintSlots(mine && mine.detail);
   if (!data.locked) startCountdown('cd', race.race_ts, 'closes in ');
@@ -893,11 +893,20 @@ function openPicker(slot) {
   if (mode !== 'team' && mode !== 'driver' && !state.standings) redraw(mode);
 }
 
-function resultsPanel(results) {
+function checkButton(round, label) {
+  return `<button class="small" data-act="check-results" data-round="${round}">${label}</button>`;
+}
+function resultsPanel(results, meta = {}, round) {
   const list = results.top10.map((id, i) => { const d = driverById(id); return d ? `<div>${avatar(d, 36)}<span><b class="num">P${i + 1}</b> ${esc(d.name)}</span></div>` : ''; }).join('');
   const dnf = results.dnf.map((id) => { const d = driverById(id); return d ? esc(d.name) : ''; }).filter(Boolean).join(', ');
-  return `<div class="panel"><h2>Official result (top 10)</h2><div class="result-list">${list}</div>
-    <p class="muted small" style="margin-top:12px">Did not finish: ${dnf || 'nobody'}</p></div>`;
+  const info = [meta.source ? `Source: ${esc(meta.source)}` : '', meta.checked_at ? `checked ${ago(meta.checked_at)}` : ''].filter(Boolean).join(' · ');
+  return `<div class="panel"><div class="row between"><h2>Official result (top 10)</h2>${checkButton(round, 'Re-check for penalties')}</div><div class="result-list">${list}</div>
+    <p class="muted small" style="margin-top:12px">Did not finish: ${dnf || 'nobody'}</p>
+    <p class="muted small">${info ? info + '. ' : ''}Results are re-checked automatically for 3 days after the race; if penalties change the order, points are recalculated.</p></div>`;
+}
+function waitingResultsPanel(meta = {}, round) {
+  return `<div class="panel"><div class="row between"><h2>Race result</h2>${checkButton(round, 'Check results')}</div>
+    <p class="muted">The result is not in the app yet.${meta.checked_at ? ` Last checked ${ago(meta.checked_at)}.` : ''} It is checked automatically every 30 minutes from about 75 minutes after the start, or press the button to check now.</p></div>`;
 }
 
 // Excuses for players who sent nothing; the same player gets the same excuse for the same race.
@@ -1088,6 +1097,17 @@ function sparkline(per) {
 
 // -------------------------------------------------------- click handling
 const actions = {
+  async 'check-results'(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    try {
+      const r = await api(`/races/${btn.dataset.round}/check-results`, { method: 'POST' });
+      const msg = { new: 'Results are in! Points updated.', updated: 'The result changed (penalties). Points recalculated.', same: 'No changes: the stored result is up to date.',
+        none: 'Not published yet. Try again in a few minutes.', too_soon: 'Checked less than a minute ago. Showing the latest.', not_started: 'The race has not started yet.' }[r.status] || 'Done';
+      toast(msg);
+      render();
+    } catch (e) { fail(e); btn.disabled = false; btn.textContent = 'Check results'; }
+  },
   'past-races'(btn) {
     const list = document.getElementById('past-list');
     const open = list.hidden;

@@ -9,6 +9,7 @@ import { f1PhotoFor } from './f1photos.js';
 import { f1TrackFor } from './f1tracks.js';
 import { Budget, syncQualifying } from './insights.js';
 import { syncPractice } from './practice.js';
+import { syncResults } from './results.js';
 import { syncStandings } from './standings.js';
 
 const UA = 'f1-vietiniai-predictions/1.0 (https://f1-vietiniai-predictions.f1vietiniai.workers.dev)';
@@ -88,54 +89,6 @@ export async function syncDrivers(env) {
   return list.length;
 }
 
-// Fetches results for every race that started more than 2 hours ago and has none stored yet.
-// Returns the number of HTTP requests made.
-export async function syncResults(env, maxRaces = 20) {
-  const cutoff = Date.now() - 2 * 3600 * 1000;
-  const { results: due } = await env.DB.prepare(
-    `SELECT round, name FROM races r
-     WHERE race_ts < ? AND NOT EXISTS (SELECT 1 FROM results x WHERE x.round = r.round)
-     ORDER BY round LIMIT ?`
-  )
-    .bind(cutoff, maxRaces)
-    .all();
-
-  let requests = 0;
-  for (const race of due) {
-    requests++;
-    let data;
-    try {
-      data = await getJson(env, `${base(env)}/${season(env)}/${race.round}/results.json?limit=100`);
-    } catch (e) {
-      console.error('Results fetch failed', race.round, e.message);
-      continue;
-    }
-    const rows = data.MRData.RaceTable.Races?.[0]?.Results;
-    if (!rows || !rows.length) continue; // official results not published yet
-
-    const stmts = [];
-    for (const r of rows) {
-      stmts.push(
-        upsertDriver(env).bind(r.Driver.driverId, r.Driver.code || null, r.Driver.permanentNumber || r.number || null,
-          `${r.Driver.givenName} ${r.Driver.familyName}`, r.Driver.url || null),
-        env.DB.prepare(`UPDATE drivers SET team=? WHERE driver_id=?`).bind(r.Constructor?.name || null, r.Driver.driverId),
-        env.DB.prepare(
-          `INSERT OR REPLACE INTO results (round, driver_id, position, pos_text, status) VALUES (?, ?, ?, ?, ?)`
-        ).bind(race.round, r.Driver.driverId, Number(r.position), String(r.positionText), r.status)
-      );
-    }
-    await env.DB.batch(stmts);
-
-    await env.DB.prepare(
-      `INSERT INTO notifications (user_id, text, link, created_at)
-       SELECT DISTINCT user_id, ?, '/', ? FROM members`
-    )
-      .bind(`Results are in for the ${race.name}. Check the scoreboard!`, Date.now())
-      .run();
-  }
-  return requests;
-}
-
 // Sets the formula1.com photo for every driver listed in src/f1photos.js. No network requests;
 // it only writes when a photo is missing or different, so it is cheap to run often.
 export async function applyF1Photos(env) {
@@ -205,7 +158,7 @@ export async function syncAll(env, { extras = true } = {}) {
   try { out.races = await syncSchedule(env); } catch (e) { out.racesError = e.message; }
   try { out.f1tracks = await applyF1Tracks(env); } catch (e) { out.f1tracksError = e.message; }
   try { out.drivers = await syncDrivers(env); } catch (e) { out.driversError = e.message; }
-  try { budget.spend(await syncResults(env)); } catch (e) { out.resultsError = e.message; }
+  try { out.results = await syncResults(env, budget); } catch (e) { out.resultsError = e.message; }
   try { out.f1photos = await applyF1Photos(env); } catch (e) { out.f1photosError = e.message; }
   if (extras) {
     try { out.qualifying = await syncQualifying(env, budget); } catch (e) { out.qualifyingError = e.message; }

@@ -8,6 +8,7 @@ import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
 import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { syncStandings, getStandings } from './standings.js';
 import { getPractice } from './practice.js';
+import { checkResultsNow } from './results.js';
 import { WPC_LEAGUE_ID, PLAYERS, wpcSeasons, allTime, seasonStats } from './wpc.js';
 import { MAX_DNF_PICKS, buildResultLookup, scorePrediction } from './scoring.js';
 
@@ -232,6 +233,13 @@ async function handleApi(request, env, ctx, url) {
     const data = await getRaceInsights(env, Number(m[1]));
     if (!data) throw new HttpError(404, 'Race not found.');
     return json(data);
+  }
+
+  // "Check results" button on the race page (formula1.com at most once a minute per race)
+  if ((m = path.match(/^\/api\/races\/(\d+)\/check-results$/)) && method === 'POST') {
+    const out = await checkResultsNow(env, Number(m[1]));
+    if (!out) throw new HttpError(404, 'Race not found.');
+    return json(out);
   }
 
   // best practice lap per driver in FP1-FP3 (Analytics tab of the race page)
@@ -624,12 +632,13 @@ async function getRacePredictions(env, lid, round, user) {
   if (lookup) {
     resultView = { top10: Array.from({ length: 10 }, (_, i) => lookup.byPos[i + 1] || null), dnf: [...lookup.dnf] };
   }
+  const resultsMeta = { checked_at: race.results_checked_at || null, source: race.results_source || null, at: race.results_at || null };
   return {
     race: { ...race, circuit_image: race.circuit_image === '-' ? null : race.circuit_image },
     server_time: now(),
     locked,
     mine: mine ? shapePrediction(mine, lookup) : null,
-    others, missing, results: resultView,
+    others, missing, results: resultView, results_meta: resultsMeta,
   };
 }
 

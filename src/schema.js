@@ -160,7 +160,8 @@ export const SCHEMA = [
 // Columns added after the first release, per table.
 const COLUMNS = {
   users: { favorite_team: 'TEXT', username: 'TEXT', avatar: 'TEXT' },
-  races: { quali_ts: 'INTEGER', f1_meeting_id: 'TEXT', f1_slug: 'TEXT', quali_checked_at: 'INTEGER', fp1_ts: 'INTEGER', fp2_ts: 'INTEGER', fp3_ts: 'INTEGER', sprint: 'INTEGER', practice_checked_at: 'INTEGER' },
+  races: { quali_ts: 'INTEGER', f1_meeting_id: 'TEXT', f1_slug: 'TEXT', quali_checked_at: 'INTEGER', fp1_ts: 'INTEGER', fp2_ts: 'INTEGER', fp3_ts: 'INTEGER', sprint: 'INTEGER', practice_checked_at: 'INTEGER',
+    results_checked_at: 'INTEGER', results_source: 'TEXT', results_at: 'INTEGER' },
   qualifying: { grid: 'TEXT' },
 };
 
