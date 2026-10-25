@@ -34,13 +34,14 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
   the server validates and only fills empty rows. Cached forever in track_history.
 
-- Race results (`src/results.js`): formula1.com /race-result page first (NC+DNF -> R, NC+DNS -> W, NC+gap -> N, DQ -> D,
-  matched to drivers by code/number; an unknown driver -> whole result from Jolpica instead), Jolpica fallback.
-  Cron checks from 75 min after the start, then re-checks every 2 h for 3 days after the race (late penalties). When the
-  classification changes it is replaced and players get a notification; points are always computed from the stored
-  results, so scores recalculate by themselves. Race page has "Check results" / "Re-check for penalties"
-  (POST /api/races/:round/check-results, any logged-in user, formula1.com at most once a minute per race via
-  races.results_checked_at). races.results_source / results_at record where and when.
+- Race results (`src/results.js`): ONLY from the official formula1.com /race-result page (owner's rule, never Jolpica).
+  NC+DNF -> R, NC+DNS -> W, NC+gap -> N, DQ -> D. Drivers matched by code, number, then name; an unknown stand-in is
+  added to drivers (id = surname). Cron checks from 75 min after the start, re-checks every 2 h for 3 days after the race
+  (late penalties), and confirms older races not yet marked results_source='formula1.com' (2 per run; results stored
+  before 2026-10-26 came from Jolpica; old-race corrections are silent). A changed classification replaces the stored
+  one and players are notified; points are always computed from stored results, so scores recalculate by themselves.
+  Race page "Check results" / "Re-check for penalties" (POST /api/races/:round/check-results, any logged-in user,
+  formula1.com at most once a minute per race via races.results_checked_at).
 - League Races tab: races still to come first (next race on top, highlighted; a started race without results stays here),
   finished races folded under "Past races" (newest first, rows built only when opened; open/closed remembered per
   league in sessionStorage).
@@ -83,7 +84,7 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - Data sources: Jolpica F1 API (calendar, drivers, results, laps), formula1.com media for images and qualifying pages.
 - Cron runs share a request budget of 45 (free plan limit 50): fixed jobs, then qualifying, Wikipedia photos.
 - Jolpica rate-limits the Worker (HTTP 429 seen on 2026-10-15, e.g. drivers.json). Watch sync_log in D1 (last 20 cron results).
-  Race results no longer depend on it (formula1.com first, since 2026-10-26).
+  Race results do not use it at all (formula1.com only, since 2026-10-26).
 - Photo/track/team lists need re-checking at the start of each season (README sections 7 and 8).
 - Tests used so far were local scripts (mock Jolpica/formula1.com/OpenF1, D1 shim on node:sqlite, Playwright); they are not in the repo.
 - Never share an in-flight promise between requests at module level (ensureSchema / assetsApplied use done-flags):
