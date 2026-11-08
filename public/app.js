@@ -561,11 +561,13 @@ async function loadInsights(round) {
   const el = document.getElementById('insights');
   if (!el || !raceCtx || raceCtx.round !== round) return; // the user moved on to another page
   if (!data) { el.innerHTML = '<div class="panel muted small">Qualifying and track history could not be loaded right now.</div>'; return; }
-  // Qualifying (default) and Analytics (practice times + link to the driver analysis) share one spot.
+  // Qualifying (default), Starting grid (after penalties) and Analytics (practice times + link to the
+  // driver analysis) share one spot.
   let tab = 'quali';
-  try { if (sessionStorage.getItem('qa-tab') === 'analytics') tab = 'analytics'; } catch { /* ignore */ }
-  el.innerHTML = `<div class="seg qa-tabs"><button data-act="qa-tab" data-tab="quali" class="${tab === 'quali' ? 'on' : ''}">Qualifying</button><button data-act="qa-tab" data-tab="analytics" class="${tab === 'analytics' ? 'on' : ''}">Analytics</button></div>
-    <div id="quali-box" ${tab === 'quali' ? '' : 'hidden'}>${qualiPanel(data.qualifying)}</div><div id="analytics-box" ${tab === 'analytics' ? '' : 'hidden'}></div><div id="hist-box">${historyPanel(data.history)}</div>`;
+  try { const s = sessionStorage.getItem('qa-tab'); if (s === 'analytics' || s === 'grid') tab = s; } catch { /* ignore */ }
+  const tabBtn = (id, label) => `<button data-act="qa-tab" data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`;
+  el.innerHTML = `<div class="seg qa-tabs">${tabBtn('quali', 'Qualifying')}${tabBtn('grid', 'Starting grid')}${tabBtn('analytics', 'Analytics')}</div>
+    <div id="quali-box" ${tab === 'quali' ? '' : 'hidden'}>${qualiPanel(data.qualifying)}</div><div id="grid-box" ${tab === 'grid' ? '' : 'hidden'}>${gridPanel(data.qualifying, round)}</div><div id="analytics-box" ${tab === 'analytics' ? '' : 'hidden'}></div><div id="hist-box">${historyPanel(data.history)}</div>`;
   if (tab === 'analytics') loadAnalyticsTab(raceCtx.lid, round);
   if (['loading', 'partial'].includes(data.history.status)) collectHistory(round, data.history);
   if (data.qualifying.live) watchQualifying(round);
@@ -583,6 +585,8 @@ function watchQualifying(round) {
     try {
       const q = (await api(`/races/${round}/insights`)).qualifying;
       box.innerHTML = qualiPanel(q);
+      const gbox = document.getElementById('grid-box');
+      if (gbox) gbox.innerHTML = gridPanel(q, round);
       if (!q.live) clearInterval(qualiTimer);
     } catch { /* keep the table we have */ }
   }, 120000);
@@ -718,23 +722,65 @@ function qualiPanel(q) {
   }
   const hasGrid = q.rows.some((r) => r.grid);
   const best = (r) => r.q3 || r.q2 || r.q1;
+  const moved = hasGrid ? q.rows.filter((r) => gridMove(r) < 0).length : 0;
   const rows = q.rows.map((r) => {
     const cut = r.position === 10 || r.position === 15 ? ' class="cut"' : '';
     const t = (v) => `<td class="r${v && v === best(r) ? ' best' : ''}">${v ? esc(v) : '<span class="muted">-</span>'}</td>`;
-    let grid = '';
-    if (hasGrid) {
-      const moved = r.grid && /^\d+$/.test(r.grid) && /^\d+$/.test(r.pos_text) && Number(r.grid) !== Number(r.pos_text);
-      const cls = !moved ? '' : Number(r.grid) > Number(r.pos_text) ? ' down' : ' up';
-      grid = `<td class="r grid${cls}"><b>${r.grid ? esc(r.grid) : '<span class="muted">-</span>'}</b></td>`;
-    }
-    return `<tr${cut}><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td>${t(r.q1)}${t(r.q2)}${t(r.q3)}${grid}</tr>`;
+    return `<tr${cut}><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td>${t(r.q1)}${t(r.q2)}${t(r.q3)}</tr>`;
   }).join('');
   const note = hasGrid
-    ? 'Grid is the official starting grid, after penalties (red: starts further back than qualified).'
-    : 'This is the qualifying order. The official starting grid (after penalties) is added here when it is published.';
+    ? `This is the qualifying order. The official starting grid is out${moved ? ` (${moved} driver${moved === 1 ? '' : 's'} moved back)` : ''}: see the Starting grid tab.`
+    : 'This is the qualifying order. The official starting grid (after penalties) appears in the Starting grid tab when it is published.';
   return `<div class="panel">${head}${checked ? `<div style="margin:-4px 0 8px">${checked}</div>` : ''}
-    <div class="scroll"><table class="quali"><thead><tr><th>Pos</th><th>Driver</th><th class="r">Q1</th><th class="r">Q2</th><th class="r">Q3</th>${hasGrid ? '<th class="r">Grid</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="scroll"><table class="quali"><thead><tr><th>Pos</th><th>Driver</th><th class="r">Q1</th><th class="r">Q2</th><th class="r">Q3</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="muted small" style="margin-top:8px">${note}${q.source === 'jolpica' ? ' Source: Jolpica F1.' : ''}</p></div>`;
+}
+
+// Places gained (+) or lost (-) between qualifying and the official grid; null when not comparable
+// (no grid yet, pit lane start, did not qualify...).
+const isNum = (v) => /^\d+$/.test(String(v || ''));
+function gridMove(r) {
+  return isNum(r.grid) && isNum(r.pos_text) ? Number(r.pos_text) - Number(r.grid) : null;
+}
+
+// Starting grid tab: the official grid from formula1.com (/starting-grid, published after the stewards
+// apply grid penalties). Until then the qualifying order is shown as a provisional grid.
+function gridPanel(q, round) {
+  const canCheck = !q.started && q.status !== 'not_yet';
+  const btn = canCheck ? `<button class="small" data-act="check-grid" data-round="${round}">Check for grid penalties</button>` : '';
+  const link = q.grid_link ? `<a class="small muted" href="${esc(q.grid_link)}" target="_blank" rel="noopener">formula1.com ↗</a>` : '';
+  const head = (badge) => `<div class="row between"><h2>Starting grid ${badge}</h2><div class="row" style="gap:10px">${link}${btn}</div></div>`;
+  if (q.status !== 'published') {
+    return `<div class="panel">${head('')}<p class="muted">The starting grid is set after qualifying.${q.quali_ts && q.status === 'not_yet' ? ` Qualifying starts <b>${fmtDate(q.quali_ts)}</b>.` : ' Qualifying results are not public yet.'}</p></div>`;
+  }
+  const official = q.rows.some((r) => r.grid);
+  const checked = q.live && q.checked_at ? `<div class="muted small" style="margin:-4px 0 8px">checked ${ago(q.checked_at)}</div>` : '';
+  if (!official) {
+    const rows = q.rows.map((r) => `<tr><td class="num"><b>${esc(r.pos_text)}</b></td><td>${driverCell(r)}</td></tr>`).join('');
+    return `<div class="panel">${head('<span class="tag provisional">Provisional</span>')}${checked}
+      <p class="muted small">The official grid (after penalties) is not published yet, so this is the qualifying order.
+      ${q.started ? '' : 'It is checked automatically every 30 minutes until the race starts, or press the button to check now.'}</p>
+      <div class="scroll"><table class="quali"><thead><tr><th>Grid</th><th>Driver</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  // numbered slots first, then pit lane starts and the like, then drivers without a grid slot
+  const rank = (r) => (isNum(r.grid) ? Number(r.grid) : r.grid ? 100 : 200) + r.position / 1000;
+  const sorted = [...q.rows].sort((a, b) => rank(a) - rank(b));
+  const penalised = [];
+  const rows = sorted.map((r) => {
+    const d = gridMove(r);
+    if (d !== null && d < 0) penalised.push(`${surname(r.name)} (−${-d})`);
+    const pitLane = r.grid && !isNum(r.grid);
+    const change = d ? `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}</span>`
+      : pitLane ? '<span class="down">Pit lane</span>' : !r.grid ? '<span class="down">Not starting</span>' : '<span class="muted">-</span>';
+    const rowCls = d && d < 0 ? ' class="pen"' : '';
+    return `<tr${rowCls}><td class="num"><b>${r.grid ? esc(r.grid) : '-'}</b></td><td>${driverCell(r)}</td><td class="r">${esc(r.pos_text)}</td><td class="r">${change}</td></tr>`;
+  }).join('');
+  const summary = penalised.length
+    ? `Lost places from qualifying: ${penalised.map(esc).join(', ')}; the drivers behind move up.`
+    : 'No driver lost places to penalties: the grid matches qualifying.';
+  return `<div class="panel">${head(`<span class="tag final">${q.started ? 'Final' : 'Official'}</span>`)}${checked}
+    <div class="scroll"><table class="quali grid-table"><thead><tr><th>Grid</th><th>Driver</th><th class="r">Qualified</th><th class="r">Change</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small" style="margin-top:8px">${summary} Official starting grid from formula1.com, after grid penalties.</p></div>`;
 }
 
 function historyPanel(h, note) {
@@ -1107,6 +1153,24 @@ const actions = {
       toast(msg);
       render();
     } catch (e) { fail(e); btn.disabled = false; btn.textContent = 'Check results'; }
+  },
+  async 'check-grid'(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    const round = Number(btn.dataset.round);
+    try {
+      const r = await api(`/races/${round}/check-grid`, { method: 'POST' });
+      const msg = { new: 'The official starting grid is out!', changed: 'The grid changed: penalties applied.', same: 'No changes: the grid is up to date.',
+        none: 'The official grid is not published yet. Try again later.', too_soon: 'Checked less than a minute ago. Showing the latest.',
+        final: 'The race has started: this is the final grid.', not_yet: 'Qualifying has not started yet.' }[r.status] || 'Done';
+      toast(msg);
+      const q = (await api(`/races/${round}/insights`)).qualifying;
+      if (!raceCtx || raceCtx.round !== round) return;
+      const gbox = document.getElementById('grid-box');
+      const qbox = document.getElementById('quali-box');
+      if (gbox) gbox.innerHTML = gridPanel(q, round);
+      if (qbox) qbox.innerHTML = qualiPanel(q);
+    } catch (e) { fail(e); btn.disabled = false; btn.textContent = 'Check for grid penalties'; }
   },
   'past-races'(btn) {
     const list = document.getElementById('past-list');

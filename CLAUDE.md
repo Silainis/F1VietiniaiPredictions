@@ -28,7 +28,10 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
   Before it is published the page says it is not public yet; history still shows.
   Live: opening the race page of a race that has not started (after quali start) re-reads formula1.com, at most once a
   minute for all users (claim via races.quali_checked_at); open pages re-ask every 2 min. Starting grid
-  (/starting-grid page) is stored in qualifying.grid and shown as a Grid column once published.
+  (/starting-grid page) is stored in qualifying.grid and shown in its own "Starting grid" tab (gridPanel in app.js):
+  grid order, qualified position, change (▲/▼, pit lane, not starting), "Provisional" (= qualifying order) until
+  published, "Official" before the race, "Final" after the start. "Check for grid penalties" button (before the race only,
+  POST /api/races/:round/check-grid, checkGridNow in insights.js, same once-a-minute claim as the live check).
   History: last 5 editions at the circuit (podium + winner's grid), lead changes, overtakes estimated from Jolpica laps
   (pit in/out laps and >15% slow cars excluded, first lap excluded). Jolpica answers the Worker with HTTP 429, so the
   first visitor's browser collects it (collectHistory in public/app.js) and POSTs to /api/races/:round/history[/:season];
@@ -45,7 +48,7 @@ F1 predictions game for friends. Cloudflare Worker + D1 + static assets. Owner: 
 - League Races tab: races still to come first (next race on top, highlighted; a started race without results stays here),
   finished races folded under "Past races" (newest first, rows built only when opened; open/closed remembered per
   league in sessionStorage).
-- Race page: Qualifying and Analytics are two tabs (Qualifying default, choice remembered per browser tab via sessionStorage).
+- Race page: Qualifying, Starting grid and Analytics tabs (Qualifying default, choice remembered per browser tab via sessionStorage 'qa-tab').
   Analytics = best lap per driver in FP1-FP3 (`src/practice.js`, table practice, `GET /api/races/:round/practice`), read from
   formula1.com /practice/<n> (leader's time + gaps). Session start times come from the Jolpica calendar (races.fp1_ts..fp3_ts,
   races.sprint = only FP1). Cron reads finished sessions of the current weekend and back-fills one past race per run;

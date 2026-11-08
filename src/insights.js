@@ -209,6 +209,31 @@ export async function liveQualifyingCheck(env, race) {
   }
 }
 
+// "Check for grid penalties" button (Starting grid tab). Before the race anyone logged in may press it;
+// formula1.com is asked at most once a minute for everybody together (same claim as the live check).
+const gridOf = async (env, round) => {
+  const { results } = await env.DB.prepare(`SELECT code, number, grid FROM qualifying WHERE round=? ORDER BY position`).bind(round).all();
+  return results.map((r) => `${r.code || r.number}:${r.grid || ''}`).join(',');
+};
+export async function checkGridNow(env, round) {
+  const race = await env.DB.prepare(`SELECT round, name, race_ts, quali_ts, quali_checked_at, f1_meeting_id, f1_slug FROM races WHERE round=?`).bind(round).first();
+  if (!race) return null;
+  const t = Date.now();
+  if (race.race_ts <= t) return { status: 'final' };
+  if ((race.quali_ts || race.race_ts - 86400000) > t) return { status: 'not_yet' };
+  if (!race.f1_meeting_id) return { status: 'none' };
+  const claim = await env.DB.prepare(`UPDATE races SET quali_checked_at=? WHERE round=? AND COALESCE(quali_checked_at, 0) < ?`)
+    .bind(t, round, t - LIVE_EVERY).run();
+  if (!claim.meta.changes) return { status: 'too_soon', checked_at: race.quali_checked_at };
+  const before = await gridOf(env, round);
+  const hadGrid = /:\w/.test(before);
+  try { await refreshQualifying(env, race, new Budget(2), { jolpicaFallback: false }); } catch (e) { console.error('Grid check', round, e.message); }
+  const after = await gridOf(env, round);
+  const hasGrid = /:\w/.test(after);
+  const status = !hasGrid ? 'none' : !hadGrid ? 'new' : before !== after ? 'changed' : 'same';
+  return { status, checked_at: t };
+}
+
 async function storeQualifying(env, round, rows, source) {
   const { results: drivers } = await env.DB.prepare(`SELECT driver_id, code, number FROM drivers`).all();
   const byCode = new Map(drivers.filter((d) => d.code).map((d) => [d.code, d.driver_id]));
@@ -304,7 +329,8 @@ export async function getRaceInsights(env, round) {
   const qualiTs = race.quali_ts || null;
   let status = 'published';
   if (!rows.length) status = qualiTs && qualiTs < t ? 'waiting' : 'not_yet';
-  const link = race.f1_meeting_id ? `${F1}/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}/qualifying` : null;
+  const base = race.f1_meeting_id ? `${F1}/en/results/${season(env)}/races/${race.f1_meeting_id}/${race.f1_slug}` : null;
+  const link = base && `${base}/qualifying`;
 
   const { results: hist } = await env.DB.prepare(
     `SELECT season, round, race_name, podium, laps, lead_changes, leaders, overtakes, stats_done FROM track_history
@@ -313,7 +339,7 @@ export async function getRaceInsights(env, round) {
   const meta = await env.DB.prepare(`SELECT podiums_at FROM track_meta WHERE circuit_id=?`).bind(race.circuit_id).first();
 
   return {
-    qualifying: { status, quali_ts: qualiTs, link, checked_at: checked?.quali_checked_at || null, live: race.race_ts > t && (qualiTs || race.race_ts - 86400000) <= t, source: rows[0]?.source || null, updated_at: rows[0]?.fetched_at || null, rows: rows.map(({ source, fetched_at, ...r }) => r) },
+    qualifying: { status, quali_ts: qualiTs, link, grid_link: base && `${base}/starting-grid`, race_ts: race.race_ts, started: race.race_ts <= t, checked_at: checked?.quali_checked_at || null, live: race.race_ts > t && (qualiTs || race.race_ts - 86400000) <= t, source: rows[0]?.source || null, updated_at: rows[0]?.fetched_at || null, rows: rows.map(({ source, fetched_at, ...r }) => r) },
     history: {
       circuit_id: race.circuit_id,
       season: season(env),

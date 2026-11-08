@@ -907,6 +907,7 @@ Object.assign(actions, {
     const tab = btn.dataset.tab;
     document.querySelectorAll('.qa-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     document.getElementById('quali-box').hidden = tab !== 'quali';
+    document.getElementById('grid-box').hidden = tab !== 'grid';
     document.getElementById('analytics-box').hidden = tab !== 'analytics';
     try { sessionStorage.setItem('qa-tab', tab); } catch { /* ignore */ }
     if (tab === 'analytics' && raceCtx) loadAnalyticsTab(raceCtx.lid, raceCtx.round);

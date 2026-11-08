@@ -195,8 +195,6 @@ table.hist td { padding-top: 8px; padding-bottom: 8px; }
   table.quali th, table.quali td, table.hist th, table.hist td { padding-left: 8px; padding-right: 8px; }
 }
 .hist-note { background: var(--amber-soft); color: #ffd978; border-radius: 8px; padding: 8px 12px; font-size: .88rem; margin: 4px 0 12px; }
-table.quali td.grid.down { color: #ff7b72; }
-table.quali td.grid.up { color: var(--green); }
 .pick-head { grid-column: 1 / -1; padding: 10px 2px 0; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
 .pick-head:first-child { padding-top: 0; }
 .pick .rank { color: var(--amber); font-weight: 600; }
@@ -267,9 +265,13 @@ table.riv td { min-width: 90px; }
 table.riv tr.same-pick td { color: var(--muted); }
 table.riv tr.diff-pick td { font-weight: 700; }
 
-/* race page: Qualifying / Analytics tabs, practice table */
-.qa-tabs { max-width: 320px; margin-bottom: 10px; }
-#quali-box[hidden], #analytics-box[hidden] { display: none; }
+/* race page: Qualifying / Starting grid / Analytics tabs, practice table */
+.qa-tabs { max-width: 420px; margin-bottom: 10px; }
+#quali-box[hidden], #grid-box[hidden], #analytics-box[hidden] { display: none; }
+.tag { display: inline-block; vertical-align: middle; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; margin-left: 6px; }
+.tag.final { background: var(--green-soft); color: var(--green); }
+.tag.provisional { background: var(--amber-soft); color: #ffd978; }
+table.grid-table tr.pen td { background: rgba(255, 123, 114, .06); }
 table.prac td.r, table.laps td.r { color: var(--text); }
 table.prac td.pb { font-weight: 700; }
 table.prac td .small { font-weight: 400; }

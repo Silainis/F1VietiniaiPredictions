@@ -5,7 +5,7 @@ import {
 import { TEAM_SLUGS, teamsForClient } from './f1teams.js';
 import { saveAvatar, avatarResponse } from './avatars.js';
 import { syncAll, applyF1Photos, applyF1Tracks } from './sync.js';
-import { Budget, getRaceInsights, saveHistoryPodiums, saveEditionStats } from './insights.js';
+import { Budget, getRaceInsights, checkGridNow, saveHistoryPodiums, saveEditionStats } from './insights.js';
 import { syncStandings, getStandings } from './standings.js';
 import { getPractice } from './practice.js';
 import { checkResultsNow } from './results.js';
@@ -238,6 +238,13 @@ async function handleApi(request, env, ctx, url) {
   // "Check results" button on the race page (formula1.com at most once a minute per race)
   if ((m = path.match(/^\/api\/races\/(\d+)\/check-results$/)) && method === 'POST') {
     const out = await checkResultsNow(env, Number(m[1]));
+    if (!out) throw new HttpError(404, 'Race not found.');
+    return json(out);
+  }
+
+  // "Check for grid penalties" button on the Starting grid tab (formula1.com at most once a minute per race)
+  if ((m = path.match(/^\/api\/races\/(\d+)\/check-grid$/)) && method === 'POST') {
+    const out = await checkGridNow(env, Number(m[1]));
     if (!out) throw new HttpError(404, 'Race not found.');
     return json(out);
   }
